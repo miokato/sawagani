@@ -71,6 +71,17 @@ def heartbeat_prompt() -> str:
     )
 
 
+def is_idle(text: str) -> bool:
+    """応答テキストが「やることなし(IDLE)」を表すか判定する。
+
+    モデルは前置き（理由説明）を付けてから最終行に `IDLE` を返すことがあるため、
+    最終の非空行が `IDLE` のときだけ True とする。空文字や、IDLE で終わらない
+    通常の作業報告は False。
+    """
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    return bool(lines) and lines[-1] == "IDLE"
+
+
 async def tick(client: ClaudeSDKClient) -> None:
     """1ティック分の処理。合成メッセージを送り、応答を表示する。"""
     await client.query(heartbeat_prompt())
@@ -83,9 +94,7 @@ async def tick(client: ClaudeSDKClient) -> None:
                     parts.append(block.text)
 
     text = "".join(parts).strip()
-    # 最終の非空行が "IDLE" なら「やることなし」と判定（前置きが付いても拾えるように）
-    last_line = text.splitlines()[-1].strip() if text else ""
-    if last_line == "IDLE":
+    if is_idle(text):
         print("💤 IDLE（やることなし）")
     else:
         print(text)
