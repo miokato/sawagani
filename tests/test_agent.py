@@ -1,4 +1,4 @@
-"""main モジュールのユニットテスト。
+"""agent モジュールのユニットテスト。
 
 Red/Green TDD で進める。まずは「やることなし(IDLE)」判定を行う純粋関数
 `is_idle()` を対象にする。この関数は応答テキストを受け取り、エージェントが
@@ -10,7 +10,7 @@ Red/Green TDD で進める。まずは「やることなし(IDLE)」判定を行
 - 空文字や、IDLE で終わらない通常の作業報告は False。
 """
 
-import main
+import agent
 
 
 class TestIsIdle:
@@ -18,23 +18,23 @@ class TestIsIdle:
 
     def test_exact_idle(self):
         """`IDLE` だけの応答は True。"""
-        assert main.is_idle("IDLE") is True
+        assert agent.is_idle("IDLE") is True
 
     def test_idle_with_preamble(self):
         """前置きが付いても最終行が IDLE なら True。"""
         text = "記録済みのため新たな作業はありません。\n\nIDLE"
-        assert main.is_idle(text) is True
+        assert agent.is_idle(text) is True
 
     def test_work_report_is_not_idle(self):
         """通常の作業報告（IDLE で終わらない）は False。"""
         text = "README.md を確認し MEMORY.md に追記しました。"
-        assert main.is_idle(text) is False
+        assert agent.is_idle(text) is False
 
     def test_empty_is_not_idle(self):
         """空応答は IDLE とみなさない（False）。"""
-        assert main.is_idle("") is False
+        assert agent.is_idle("") is False
 
     def test_idle_not_final_line_is_not_idle(self):
         """IDLE が最終行でなければ False。"""
         text = "IDLE ですが念のため状況を確認します。"
-        assert main.is_idle(text) is False
+        assert agent.is_idle(text) is False
