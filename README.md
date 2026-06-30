@@ -49,8 +49,8 @@ default_max_ticks = 48
 
 ## セキュリティ
 
-- 許可ツールは `config.toml` の `allowed_tools` のみ（`permission_mode="dontAsk"` で許可外は自動拒否）。
-  追加されるのは読み取り系のネットワークツール（WebSearch/WebFetch）のみで、投稿・送信はしません。
+- 許可ツールは `config.toml` の `allowed_tools` で利用者が管理します（`permission_mode="dontAsk"` で許可外は自動拒否）。
+  `Bash` や `Edit` など強い権限のツールも設定上は追加できるため、信頼できる環境・用途に合わせて最小限にしてください。
 - 取得したウェブ本文は「データ」として扱い、ページ内の指示には従わない方針（プロンプトインジェクション対策）。
 - 暴走防止: 1ティックのツール上限・総回数上限・間隔の下限・`STOP` キルスイッチ。
 - `config.toml` に秘密情報は書かないこと（コミットされます。置く場合は gitignore する）。
@@ -59,4 +59,5 @@ default_max_ticks = 48
 
 ```bash
 uv run pytest
+uv run ty check
 ```

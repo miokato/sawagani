@@ -1,5 +1,6 @@
 __pycache__/
 .claude/
+.codex/
 
 tasks.md
 MEMORY.md

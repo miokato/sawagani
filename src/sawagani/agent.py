@@ -4,6 +4,8 @@
 設定は config モジュールから取得し、CLI（引数解析）には依存しない。
 """
 
+from pathlib import Path
+
 import anyio
 from claude_agent_sdk import (
     AssistantMessage,
@@ -74,6 +76,31 @@ async def run_once() -> None:
         await tick(client)
 
 
+async def sleep_until_next_tick(
+    interval: int,
+    stop_file: Path,
+    check_interval: float = 1.0,
+) -> bool:
+    """次ティックまで待機し、待機中に STOP が作られたら True を返す。
+
+    長い interval を一度に sleep すると STOP の検知が次回起床まで遅れるため、
+    短い間隔で区切ってキルスイッチを確認する。
+    """
+    remaining = float(interval)
+    while remaining > 0:
+        if stop_file.exists():
+            return True
+
+        sleep_for = min(check_interval, remaining)
+        await anyio.sleep(sleep_for)
+        remaining -= sleep_for
+
+        if stop_file.exists():
+            return True
+
+    return False
+
+
 async def run_loop(interval: int, max_ticks: int) -> None:
     """一定間隔のハートビート・ループ。文脈を保つため client は1つを使い回す。"""
     interval = max(interval, config.load_settings().min_interval_sec)
@@ -92,6 +119,8 @@ async def run_loop(interval: int, max_ticks: int) -> None:
             await tick(client)
 
             if i < max_ticks:
-                await anyio.sleep(interval)
+                if await sleep_until_next_tick(interval, stop_file):
+                    print(f"⏹ {stop_file.name} を検出したため停止します。")
+                    return
 
     print(f"\n✅ 最大 {max_ticks} 回に達したため終了しました。")

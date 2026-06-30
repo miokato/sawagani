@@ -10,6 +10,8 @@ Red/Green TDD で進める。まずは「やることなし(IDLE)」判定を行
 - 空文字や、IDLE で終わらない通常の作業報告は False。
 """
 
+import anyio
+
 from sawagani import agent, config
 
 
@@ -58,3 +60,28 @@ class TestIsIdle:
         """IDLE が最終行でなければ False。"""
         text = "IDLE ですが念のため状況を確認します。"
         assert agent.is_idle(text) is False
+
+
+class TestSleepUntilNextTick:
+    """sleep_until_next_tick(): 待機中の STOP 作成を短い間隔で検知する。"""
+
+    def test_returns_true_when_stop_file_appears_during_wait(self, tmp_path, monkeypatch):
+        """STOP が待機中に作られたら、次ティックを待たず停止を返す。"""
+        stop_file = tmp_path / config.STOP_FILE
+        sleep_calls: list[float] = []
+
+        async def fake_sleep(seconds: float):
+            sleep_calls.append(seconds)
+            stop_file.touch()
+
+        monkeypatch.setattr(agent.anyio, "sleep", fake_sleep)
+
+        stopped = anyio.run(
+            agent.sleep_until_next_tick,
+            30,
+            stop_file,
+            1,
+        )
+
+        assert stopped is True
+        assert sleep_calls == [1]
