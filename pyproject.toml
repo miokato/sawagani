@@ -2,7 +2,7 @@
 name = "sawagani"
 version = "0.1.0"
 description = "軽量なLLMエージェント（Claude Agent SDK によるハートビート駆動エージェント）"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "claude-agent-sdk",
 ]

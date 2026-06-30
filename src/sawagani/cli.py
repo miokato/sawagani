@@ -19,6 +19,8 @@ from . import agent, config
 
 
 def parse_args() -> argparse.Namespace:
+    settings = config.load_settings()  # 既定値は config.toml（無ければ組み込み値）から
+
     parser = argparse.ArgumentParser(description="Sawagani: ハートビート駆動の自律エージェント")
     sub = parser.add_subparsers(dest="command")
 
@@ -26,12 +28,12 @@ def parse_args() -> argparse.Namespace:
 
     loop_parser = sub.add_parser("loop", help="一定間隔の常駐ループ")
     loop_parser.add_argument(
-        "--interval", type=int, default=config.DEFAULT_INTERVAL_SEC,
-        help=f"ティック間隔（秒, 下限 {config.MIN_INTERVAL_SEC}）。既定 {config.DEFAULT_INTERVAL_SEC}",
+        "--interval", type=int, default=settings.default_interval_sec,
+        help=f"ティック間隔（秒, 下限 {settings.min_interval_sec}）。既定 {settings.default_interval_sec}",
     )
     loop_parser.add_argument(
-        "--max-ticks", type=int, default=config.DEFAULT_MAX_TICKS,
-        help=f"総ティック数の上限。既定 {config.DEFAULT_MAX_TICKS}",
+        "--max-ticks", type=int, default=settings.default_max_ticks,
+        help=f"総ティック数の上限。既定 {settings.default_max_ticks}",
     )
 
     return parser.parse_args()

@@ -16,13 +16,17 @@ from . import config
 
 
 def build_options() -> ClaudeAgentOptions:
-    """最小・セキュアな実行オプションを組み立てる。"""
+    """最小・セキュアな実行オプションを組み立てる。
+
+    許可ツールやガード値は config.toml（無ければ組み込みデフォルト）から読む。
+    """
+    settings = config.load_settings()
     return ClaudeAgentOptions(
-        cwd=str(config.data_dir()),       # 状態ファイルのあるディレクトリを作業場所に
-        allowed_tools=["Read", "Write"],  # 最小許可リスト
-        permission_mode="dontAsk",        # 許可外ツールは自動拒否
+        cwd=str(config.data_dir()),            # 状態ファイルのあるディレクトリを作業場所に
+        allowed_tools=settings.allowed_tools,  # 設定で許可されたツールのみ
+        permission_mode="dontAsk",             # 許可外ツールは自動拒否
         system_prompt=config.SYSTEM_PROMPT,
-        max_turns=config.MAX_TURNS_PER_TICK,  # 1ティックの上限
+        max_turns=settings.max_turns_per_tick,  # 1ティックの上限
     )
 
 
@@ -72,7 +76,7 @@ async def run_once() -> None:
 
 async def run_loop(interval: int, max_ticks: int) -> None:
     """一定間隔のハートビート・ループ。文脈を保つため client は1つを使い回す。"""
-    interval = max(interval, config.MIN_INTERVAL_SEC)
+    interval = max(interval, config.load_settings().min_interval_sec)
     stop_file = config.stop_path()
     print(f"🫀 ハートビート開始: 間隔 {interval}秒 / 最大 {max_ticks} 回 "
           f"（{stop_file.name} ファイルで停止）\n")

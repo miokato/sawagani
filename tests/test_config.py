@@ -30,3 +30,37 @@ class TestStopPath:
         """data_dir 配下の STOP ファイルを指す。"""
         monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
         assert config.stop_path().resolve() == (tmp_path / config.STOP_FILE).resolve()
+
+
+class TestLoadSettings:
+    """load_settings(): config.toml があれば読み、無ければ組み込みデフォルトを返す。"""
+
+    def test_defaults_when_no_file(self, tmp_path, monkeypatch):
+        """config.toml が無ければデフォルト設定を返す。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))  # 空ディレクトリ
+        s = config.load_settings()
+        assert s.allowed_tools == ["Read", "Write", "WebSearch", "WebFetch"]
+        assert s.max_turns_per_tick == 12
+        assert s.default_interval_sec == 1800
+        assert s.min_interval_sec == 60
+        assert s.default_max_ticks == 48
+
+    def test_overrides_allowed_tools_from_file(self, tmp_path, monkeypatch):
+        """config.toml の allowed_tools が反映される。未指定値はデフォルトのまま。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        (tmp_path / config.CONFIG_FILE).write_text(
+            '[agent]\nallowed_tools = ["Read"]\n', encoding="utf-8"
+        )
+        s = config.load_settings()
+        assert s.allowed_tools == ["Read"]
+        assert s.max_turns_per_tick == 12  # 未指定はデフォルト維持
+
+    def test_overrides_loop_values_from_file(self, tmp_path, monkeypatch):
+        """config.toml の [loop] 値が反映される。未指定値はデフォルトのまま。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        (tmp_path / config.CONFIG_FILE).write_text(
+            "[loop]\ndefault_interval_sec = 300\n", encoding="utf-8"
+        )
+        s = config.load_settings()
+        assert s.default_interval_sec == 300
+        assert s.min_interval_sec == 60  # 未指定はデフォルト維持

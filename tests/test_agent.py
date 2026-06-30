@@ -10,7 +10,27 @@ Red/Green TDD で進める。まずは「やることなし(IDLE)」判定を行
 - 空文字や、IDLE で終わらない通常の作業報告は False。
 """
 
-from sawagani import agent
+from sawagani import agent, config
+
+
+class TestBuildOptions:
+    """build_options(): 設定（config.toml）の許可ツールを実行オプションへ配線する。"""
+
+    def test_allowed_tools_come_from_settings(self, tmp_path, monkeypatch):
+        """allowed_tools が load_settings() の値と一致する（設定で制御できる）。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        (tmp_path / config.CONFIG_FILE).write_text(
+            '[agent]\nallowed_tools = ["Read"]\n', encoding="utf-8"
+        )
+        options = agent.build_options()
+        assert options.allowed_tools == ["Read"]
+
+    def test_default_includes_web_tools(self, tmp_path, monkeypatch):
+        """config.toml が無ければ既定で Web ツールが許可される。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        options = agent.build_options()
+        assert "WebSearch" in options.allowed_tools
+        assert "WebFetch" in options.allowed_tools
 
 
 class TestIsIdle:
