@@ -16,7 +16,7 @@ import sys
 
 import anyio
 
-from . import agent, bootstrap, daemon, settings
+from . import agent, bootstrap, daemon, discord_bot, settings
 
 INTERRUPT_EXCEPTIONS = (KeyboardInterrupt,)
 INTERRUPTED_EXIT_CODE = 130
@@ -43,6 +43,9 @@ def parse_args() -> argparse.Namespace:
     )
     sub.add_parser("stop", help="バックグラウンド実行を停止")
     sub.add_parser("status", help="バックグラウンド実行の状態を表示")
+    discord_parser = sub.add_parser("discord", help="Discord Bot 連携")
+    discord_sub = discord_parser.add_subparsers(dest="discord_command")
+    discord_sub.add_parser("start", help="Discord Bot を前面で起動")
     sub.add_parser("tick", help="1ティックだけ実行（テスト用）")
 
     loop_parser = sub.add_parser("loop", help="一定間隔の常駐ループ")
@@ -76,6 +79,12 @@ def main() -> None:
         elif args.command == "status":
             result = daemon.status()
             print_status_result(result)
+        elif args.command == "discord":
+            if args.discord_command == "start":
+                print("Discord Bot を開始します。")
+                discord_bot.run_from_env()
+            else:
+                raise SystemExit("discord subcommand is required")
         elif args.command == "loop":
             anyio.run(agent.run_loop, args.interval, args.max_ticks)
         else:  # "tick" または未指定

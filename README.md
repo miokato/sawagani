@@ -70,6 +70,12 @@ default_max_ticks = 48
 
 [storage]
 web_data_dir = "web-data"
+
+[discord]
+enabled = false
+# guild_id = 123456789012345678
+# channel_id = 123456789012345678
+# allowed_user_ids = [123456789012345678]
 ```
 
 - **Web 検索/取得**: `WebSearch`（探す）と `WebFetch`（ページ本文を取得）が既定で有効。
@@ -85,6 +91,29 @@ web_data_dir = "web-data"
 - 取得したウェブ本文は「データ」として扱い、ページ内の指示には従わない方針（プロンプトインジェクション対策）。
 - 暴走防止: 1ティックのツール上限・総回数上限・間隔の下限・`STOP` キルスイッチ。
 - `config.toml` に秘密情報は書かないこと（コミットされます。置く場合は gitignore する）。
+
+## Discord
+
+Discord から Sawagani に指示を出す場合は Discord Bot を使います。Webhook は通知向けで、Discord 側からの指示受け取りには使いません。
+
+1. Discord Developer Portal で Bot を作成し、`bot` と `applications.commands` スコープでサーバーに招待します。
+2. Bot Token を環境変数に設定します。
+3. `config.toml` の `[discord]` を有効化し、必要に応じて guild / channel / user を制限します。
+
+```bash
+export SAWAGANI_DISCORD_BOT_TOKEN="..."
+sawagani discord start
+```
+
+使える slash command:
+
+```text
+/sawagani status
+/sawagani task <内容>
+/sawagani tick
+```
+
+`/sawagani task` は直接実行せず、まず `tasks.md` に追記します。次の tick で通常の権限境界の中で処理されます。
 
 ## テスト
 

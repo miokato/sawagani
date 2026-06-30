@@ -12,6 +12,23 @@ from sawagani import cli
 class TestMain:
     """main(): CLI エントリとして終了時のふるまいを制御する。"""
 
+    def test_discord_start_command_runs_discord_bot(self, monkeypatch, capsys):
+        """`sawagani discord start` は Discord Bot 起動処理を呼ぶ。"""
+        called = False
+
+        def fake_run_from_env():
+            nonlocal called
+            called = True
+
+        monkeypatch.setattr(cli.discord_bot, "run_from_env", fake_run_from_env)
+        monkeypatch.setattr("sys.argv", ["sawagani", "discord", "start"])
+
+        cli.main()
+
+        captured = capsys.readouterr()
+        assert called is True
+        assert "Discord Bot を開始します" in captured.out
+
     def test_start_command_runs_daemon_start(self, monkeypatch, capsys):
         """`sawagani start` はバックグラウンド起動処理を呼ぶ。"""
         called: dict[str, int] = {}

@@ -109,3 +109,22 @@ class TestLoadSettings:
         s = settings.load_settings()
 
         assert s.web_data_dir == "research"
+
+    def test_overrides_discord_values_from_file(self, tmp_path, monkeypatch):
+        """config.toml の [discord] 値が反映される。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        (tmp_path / settings.CONFIG_FILE).write_text(
+            "[discord]\n"
+            "enabled = true\n"
+            "guild_id = 111\n"
+            "channel_id = 222\n"
+            "allowed_user_ids = [333, 444]\n",
+            encoding="utf-8",
+        )
+
+        s = settings.load_settings()
+
+        assert s.discord.enabled is True
+        assert s.discord.guild_id == 111
+        assert s.discord.channel_id == 222
+        assert s.discord.allowed_user_ids == [333, 444]

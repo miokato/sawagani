@@ -5,6 +5,7 @@ description = "軽量なLLMエージェント（Claude Agent SDK によるハー
 requires-python = ">=3.11"
 dependencies = [
     "claude-agent-sdk",
+    "discord-py",
 ]
 
 [project.scripts]

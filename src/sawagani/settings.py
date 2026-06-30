@@ -29,6 +29,17 @@ DEFAULT_MIN_INTERVAL_SEC = 60     # --interval の下限（暴走防止）
 DEFAULT_MAX_TICKS = 48            # 総ティック数の上限（既定30分×48＝約1日）
 DEFAULT_WEB_DATA_DIR = "web-data"  # Web 取得データを保存するディレクトリ
 
+
+@dataclass
+class DiscordSettings:
+    """Discord Bot 連携の設定値。Token は環境変数から読む。"""
+
+    enabled: bool = False
+    guild_id: int | None = None
+    channel_id: int | None = None
+    allowed_user_ids: list[int] = field(default_factory=list)
+
+
 def system_prompt(web_data_dir_path: Path) -> str:
     """エージェントのシステムプロンプト（人格・手順）を組み立てる。"""
     return f"""\
@@ -60,6 +71,7 @@ class Settings:
     min_interval_sec: int = DEFAULT_MIN_INTERVAL_SEC
     default_max_ticks: int = DEFAULT_MAX_TICKS
     web_data_dir: str = DEFAULT_WEB_DATA_DIR
+    discord: DiscordSettings = field(default_factory=DiscordSettings)
 
 
 def data_dir() -> Path:
@@ -134,5 +146,15 @@ def load_settings() -> Settings:
     storage = data.get("storage", {})
     if "web_data_dir" in storage:
         settings.web_data_dir = str(storage["web_data_dir"])
+
+    discord = data.get("discord", {})
+    if "enabled" in discord:
+        settings.discord.enabled = bool(discord["enabled"])
+    if "guild_id" in discord:
+        settings.discord.guild_id = int(discord["guild_id"])
+    if "channel_id" in discord:
+        settings.discord.channel_id = int(discord["channel_id"])
+    if "allowed_user_ids" in discord:
+        settings.discord.allowed_user_ids = [int(user_id) for user_id in discord["allowed_user_ids"]]
 
     return settings

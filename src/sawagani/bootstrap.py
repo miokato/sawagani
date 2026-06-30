@@ -27,6 +27,13 @@ default_max_ticks = 48
 
 [storage]
 web_data_dir = "web-data"
+
+[discord]
+# Discord から Sawagani を操作する場合に true。Bot Token は環境変数に設定する。
+enabled = false
+# guild_id = 123456789012345678
+# channel_id = 123456789012345678
+# allowed_user_ids = [123456789012345678]
 """
 
 
