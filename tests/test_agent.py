@@ -11,8 +11,26 @@ Red/Green TDD で進める。まずは「やることなし(IDLE)」判定を行
 """
 
 import anyio
+from claude_agent_sdk import AssistantMessage, TextBlock
 
 from sawagani import agent, config
+
+
+class FakeClient:
+    """tick() に必要な最小の ClaudeSDKClient 互換オブジェクト。"""
+
+    def __init__(self, response_text: str):
+        self.response_text = response_text
+        self.queries: list[str] = []
+
+    async def query(self, prompt: str):
+        self.queries.append(prompt)
+
+    async def receive_response(self):
+        yield AssistantMessage(
+            content=[TextBlock(self.response_text)],
+            model="test",
+        )
 
 
 class TestBuildOptions:
@@ -33,6 +51,17 @@ class TestBuildOptions:
         options = agent.build_options()
         assert "WebSearch" in options.allowed_tools
         assert "WebFetch" in options.allowed_tools
+
+    def test_write_tools_are_guarded_by_hook(self, tmp_path, monkeypatch):
+        """Write/Edit/MultiEdit/Bash は PreToolUse hook で保存先境界を検査する。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+
+        options = agent.build_options()
+
+        assert options.hooks is not None
+        matchers = options.hooks["PreToolUse"]
+        assert matchers[0].matcher == "Write|Edit|MultiEdit|Bash"
+        assert options.add_dirs == [tmp_path / "web-data"]
 
 
 class TestIsIdle:
@@ -60,6 +89,88 @@ class TestIsIdle:
         """IDLE が最終行でなければ False。"""
         text = "IDLE ですが念のため状況を確認します。"
         assert agent.is_idle(text) is False
+
+
+class TestStorageWriteGuard:
+    """make_storage_write_guard(): LLM の変更先を保存先ディレクトリ以下に制限する。"""
+
+    def test_allows_write_under_web_data_dir(self, tmp_path):
+        """保存先ディレクトリ配下への Write は許可する。"""
+        web_data_dir = tmp_path / "web-data"
+        guard = agent.make_storage_write_guard(web_data_dir)
+
+        result = anyio.run(
+            guard,
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(web_data_dir / "page.md")},
+            },
+            "tool-1",
+            {"signal": None},
+        )
+
+        assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    def test_denies_write_outside_web_data_dir(self, tmp_path):
+        """MEMORY.md など保存先外への Write は拒否する。"""
+        web_data_dir = tmp_path / "web-data"
+        guard = agent.make_storage_write_guard(web_data_dir)
+
+        result = anyio.run(
+            guard,
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / config.MEMORY_FILE)},
+            },
+            "tool-1",
+            {"signal": None},
+        )
+
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    def test_denies_bash_because_write_scope_cannot_be_proven(self, tmp_path):
+        """Bash は任意のファイル変更ができるため、保存先境界を守る目的では拒否する。"""
+        guard = agent.make_storage_write_guard(tmp_path / "web-data")
+
+        result = anyio.run(
+            guard,
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "touch web-data/page.md"},
+            },
+            "tool-1",
+            {"signal": None},
+        )
+
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+class TestTick:
+    """tick(): LLM 応答の表示と MEMORY 追記を担う。"""
+
+    def test_appends_work_report_to_memory(self, tmp_path, monkeypatch):
+        """作業報告はアプリ本体が MEMORY.md に1行追記する。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        client = FakeClient("ページを取得し web-data/page.md に保存しました。\n出典: https://example.com")
+
+        anyio.run(agent.tick, client)
+
+        memory = (tmp_path / config.MEMORY_FILE).read_text(encoding="utf-8")
+        assert "ページを取得し web-data/page.md に保存しました。" in memory
+        assert "出典: https://example.com" in memory
+        assert len(memory.strip().splitlines()) == 1
+
+    def test_idle_does_not_append_memory(self, tmp_path, monkeypatch):
+        """IDLE 応答は作業実施ではないため MEMORY.md を作らない。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        client = FakeClient("IDLE")
+
+        anyio.run(agent.tick, client)
+
+        assert not (tmp_path / config.MEMORY_FILE).exists()
 
 
 class TestSleepUntilNextTick:

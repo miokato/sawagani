@@ -32,6 +32,40 @@ class TestStopPath:
         assert config.stop_path().resolve() == (tmp_path / config.STOP_FILE).resolve()
 
 
+class TestWebDataDir:
+    """web_data_dir(): Web 取得データの保存先ディレクトリを解決する。"""
+
+    def test_defaults_under_data_dir(self, tmp_path, monkeypatch):
+        """未設定なら data_dir 配下の既定ディレクトリを使う。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        settings = config.load_settings()
+
+        assert config.web_data_dir(settings) == tmp_path / "web-data"
+
+    def test_relative_path_is_under_data_dir(self, tmp_path, monkeypatch):
+        """相対パス指定は data_dir からの相対として解決する。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        (tmp_path / config.CONFIG_FILE).write_text(
+            '[storage]\nweb_data_dir = "saved/pages"\n', encoding="utf-8"
+        )
+
+        settings = config.load_settings()
+
+        assert config.web_data_dir(settings) == tmp_path / "saved" / "pages"
+
+    def test_relative_path_cannot_escape_data_dir(self, tmp_path, monkeypatch):
+        """相対パス指定が .. で data_dir の外へ出る設定は拒否する。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        settings = config.Settings(web_data_dir="../outside")
+
+        try:
+            config.web_data_dir(settings)
+        except ValueError as exc:
+            assert "web_data_dir" in str(exc)
+        else:
+            raise AssertionError("web_data_dir should reject escaping relative paths")
+
+
 class TestLoadSettings:
     """load_settings(): config.toml があれば読み、無ければ組み込みデフォルトを返す。"""
 
@@ -64,3 +98,14 @@ class TestLoadSettings:
         s = config.load_settings()
         assert s.default_interval_sec == 300
         assert s.min_interval_sec == 60  # 未指定はデフォルト維持
+
+    def test_overrides_web_data_dir_from_file(self, tmp_path, monkeypatch):
+        """config.toml の [storage].web_data_dir が反映される。"""
+        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        (tmp_path / config.CONFIG_FILE).write_text(
+            '[storage]\nweb_data_dir = "research"\n', encoding="utf-8"
+        )
+
+        s = config.load_settings()
+
+        assert s.web_data_dir == "research"
