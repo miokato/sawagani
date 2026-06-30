@@ -13,7 +13,7 @@ Red/Green TDD で進める。まずは「やることなし(IDLE)」判定を行
 import anyio
 from claude_agent_sdk import AssistantMessage, TextBlock
 
-from sawagani import agent, config
+from sawagani import agent, settings
 
 
 class FakeClient:
@@ -38,8 +38,8 @@ class TestBuildOptions:
 
     def test_allowed_tools_come_from_settings(self, tmp_path, monkeypatch):
         """allowed_tools が load_settings() の値と一致する（設定で制御できる）。"""
-        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
-        (tmp_path / config.CONFIG_FILE).write_text(
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        (tmp_path / settings.CONFIG_FILE).write_text(
             '[agent]\nallowed_tools = ["Read"]\n', encoding="utf-8"
         )
         options = agent.build_options()
@@ -47,14 +47,14 @@ class TestBuildOptions:
 
     def test_default_includes_web_tools(self, tmp_path, monkeypatch):
         """config.toml が無ければ既定で Web ツールが許可される。"""
-        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
         options = agent.build_options()
         assert "WebSearch" in options.allowed_tools
         assert "WebFetch" in options.allowed_tools
 
     def test_write_tools_are_guarded_by_hook(self, tmp_path, monkeypatch):
         """Write/Edit/MultiEdit/Bash は PreToolUse hook で保存先境界を検査する。"""
-        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
 
         options = agent.build_options()
 
@@ -122,7 +122,7 @@ class TestStorageWriteGuard:
             {
                 "hook_event_name": "PreToolUse",
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / config.MEMORY_FILE)},
+                "tool_input": {"file_path": str(tmp_path / settings.MEMORY_FILE)},
             },
             "tool-1",
             {"signal": None},
@@ -153,24 +153,24 @@ class TestTick:
 
     def test_appends_work_report_to_memory(self, tmp_path, monkeypatch):
         """作業報告はアプリ本体が MEMORY.md に1行追記する。"""
-        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
         client = FakeClient("ページを取得し web-data/page.md に保存しました。\n出典: https://example.com")
 
         anyio.run(agent.tick, client)
 
-        memory = (tmp_path / config.MEMORY_FILE).read_text(encoding="utf-8")
+        memory = (tmp_path / settings.MEMORY_FILE).read_text(encoding="utf-8")
         assert "ページを取得し web-data/page.md に保存しました。" in memory
         assert "出典: https://example.com" in memory
         assert len(memory.strip().splitlines()) == 1
 
     def test_idle_does_not_append_memory(self, tmp_path, monkeypatch):
         """IDLE 応答は作業実施ではないため MEMORY.md を作らない。"""
-        monkeypatch.setenv(config.HOME_ENV, str(tmp_path))
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
         client = FakeClient("IDLE")
 
         anyio.run(agent.tick, client)
 
-        assert not (tmp_path / config.MEMORY_FILE).exists()
+        assert not (tmp_path / settings.MEMORY_FILE).exists()
 
 
 class TestSleepUntilNextTick:
@@ -178,7 +178,7 @@ class TestSleepUntilNextTick:
 
     def test_returns_true_when_stop_file_appears_during_wait(self, tmp_path, monkeypatch):
         """STOP が待機中に作られたら、次ティックを待たず停止を返す。"""
-        stop_file = tmp_path / config.STOP_FILE
+        stop_file = tmp_path / settings.STOP_FILE
         sleep_calls: list[float] = []
 
         async def fake_sleep(seconds: float):

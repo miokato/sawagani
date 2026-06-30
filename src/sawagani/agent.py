@@ -1,7 +1,7 @@
 """Sawagani のハートビート・エージェント本体（実行エンジンの責務）。
 
 「一定間隔で起動し、状態ファイルを読んで作業を1つ実行する」ことだけを担う。
-設定は config モジュールから取得し、CLI（引数解析）には依存しない。
+設定は settings モジュールから取得し、CLI（引数解析）には依存しない。
 """
 
 from datetime import datetime
@@ -17,7 +17,7 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-from . import config
+from . import settings
 
 WRITE_TOOL_NAMES = {"Write", "Edit", "MultiEdit"}
 WRITE_GUARD_MATCHER = "Write|Edit|MultiEdit|Bash"
@@ -28,16 +28,16 @@ def build_options() -> ClaudeAgentOptions:
 
     許可ツールやガード値は config.toml（無ければ組み込みデフォルト）から読む。
     """
-    settings = config.load_settings()
-    web_data_dir = config.web_data_dir(settings)
+    loaded_settings = settings.load_settings()
+    web_data_dir = settings.web_data_dir(loaded_settings)
     web_data_dir.mkdir(parents=True, exist_ok=True)
 
     return ClaudeAgentOptions(
-        cwd=str(config.data_dir()),            # 状態ファイルのあるディレクトリを作業場所に
-        allowed_tools=settings.allowed_tools,  # 設定で許可されたツールのみ
+        cwd=str(settings.data_dir()),                # 状態ファイルのあるディレクトリを作業場所に
+        allowed_tools=loaded_settings.allowed_tools,  # 設定で許可されたツールのみ
         permission_mode="dontAsk",             # 許可外ツールは自動拒否
-        system_prompt=config.system_prompt(web_data_dir),
-        max_turns=settings.max_turns_per_tick,  # 1ティックの上限
+        system_prompt=settings.system_prompt(web_data_dir),
+        max_turns=loaded_settings.max_turns_per_tick,  # 1ティックの上限
         add_dirs=[web_data_dir],
         hooks={
             "PreToolUse": [
@@ -54,7 +54,7 @@ def heartbeat_prompt() -> str:
     """ティックごとに注入する合成ユーザーメッセージ（＝ハートビート）。"""
     return (
         "【ハートビート】定期起動です。手順に従って "
-        f"{config.TASKS_FILE} と {config.MEMORY_FILE} を確認し、"
+        f"{settings.TASKS_FILE} と {settings.MEMORY_FILE} を確認し、"
         "やるべき作業が1つあれば実行して要約を返し、なければ IDLE とだけ返してください。"
         "MEMORY への追記はアプリ本体が行うため、あなたは変更しないでください。"
     )
@@ -121,7 +121,7 @@ def make_storage_write_guard(web_data_dir: Path):
 
         target_path = Path(file_path)
         if not target_path.is_absolute():
-            target_path = config.data_dir() / target_path
+            target_path = settings.data_dir() / target_path
 
         if path_is_under(target_path, web_data_dir):
             return hook_permission("allow")
@@ -145,7 +145,7 @@ def append_memory_entry(text: str) -> None:
     if not summary:
         return
 
-    memory_path = config.data_dir() / config.MEMORY_FILE
+    memory_path = settings.data_dir() / settings.MEMORY_FILE
     memory_path.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -213,8 +213,8 @@ async def sleep_until_next_tick(
 
 async def run_loop(interval: int, max_ticks: int) -> None:
     """一定間隔のハートビート・ループ。文脈を保つため client は1つを使い回す。"""
-    interval = max(interval, config.load_settings().min_interval_sec)
-    stop_file = config.stop_path()
+    interval = max(interval, settings.load_settings().min_interval_sec)
+    stop_file = settings.stop_path()
     print(f"🫀 ハートビート開始: 間隔 {interval}秒 / 最大 {max_ticks} 回 "
           f"（{stop_file.name} ファイルで停止）\n")
 

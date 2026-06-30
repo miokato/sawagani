@@ -16,14 +16,14 @@ import sys
 
 import anyio
 
-from . import agent, config
+from . import agent, settings
 
 INTERRUPT_EXCEPTIONS = (KeyboardInterrupt,)
 INTERRUPTED_EXIT_CODE = 130
 
 
 def parse_args() -> argparse.Namespace:
-    settings = config.load_settings()  # 既定値は config.toml（無ければ組み込み値）から
+    loaded_settings = settings.load_settings()  # 既定値は config.toml（無ければ組み込み値）から
 
     parser = argparse.ArgumentParser(description="Sawagani: ハートビート駆動の自律エージェント")
     sub = parser.add_subparsers(dest="command")
@@ -32,12 +32,15 @@ def parse_args() -> argparse.Namespace:
 
     loop_parser = sub.add_parser("loop", help="一定間隔の常駐ループ")
     loop_parser.add_argument(
-        "--interval", type=int, default=settings.default_interval_sec,
-        help=f"ティック間隔（秒, 下限 {settings.min_interval_sec}）。既定 {settings.default_interval_sec}",
+        "--interval", type=int, default=loaded_settings.default_interval_sec,
+        help=(
+            f"ティック間隔（秒, 下限 {loaded_settings.min_interval_sec}）。"
+            f"既定 {loaded_settings.default_interval_sec}"
+        ),
     )
     loop_parser.add_argument(
-        "--max-ticks", type=int, default=settings.default_max_ticks,
-        help=f"総ティック数の上限。既定 {settings.default_max_ticks}",
+        "--max-ticks", type=int, default=loaded_settings.default_max_ticks,
+        help=f"総ティック数の上限。既定 {loaded_settings.default_max_ticks}",
     )
 
     return parser.parse_args()
