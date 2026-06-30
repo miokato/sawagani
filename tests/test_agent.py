@@ -10,7 +10,7 @@ Red/Green TDD で進める。まずは「やることなし(IDLE)」判定を行
 - 空文字や、IDLE で終わらない通常の作業報告は False。
 """
 
-import agent
+from sawagani import agent
 
 
 class TestIsIdle:

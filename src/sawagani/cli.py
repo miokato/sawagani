@@ -7,16 +7,15 @@ claude CLI のサブスク認証（Claude Max など）を利用するため API
 事前に `claude` でログイン済みであること。
 
 実行:
-    uv run main.py tick                                  # 1ティックだけ（テスト用）
-    uv run main.py loop --interval 1800 --max-ticks 48   # 常駐ループ
+    uv run sawagani tick                                  # 1ティックだけ（テスト用）
+    uv run sawagani loop --interval 1800 --max-ticks 48   # 常駐ループ
 """
 
 import argparse
 
 import anyio
 
-import agent
-import config
+from . import agent, config
 
 
 def parse_args() -> argparse.Namespace:

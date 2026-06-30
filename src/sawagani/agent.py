@@ -12,13 +12,13 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-import config
+from . import config
 
 
 def build_options() -> ClaudeAgentOptions:
     """最小・セキュアな実行オプションを組み立てる。"""
     return ClaudeAgentOptions(
-        cwd=str(config.WORKDIR),          # 作業ディレクトリ固定
+        cwd=str(config.data_dir()),       # 状態ファイルのあるディレクトリを作業場所に
         allowed_tools=["Read", "Write"],  # 最小許可リスト
         permission_mode="dontAsk",        # 許可外ツールは自動拒否
         system_prompt=config.SYSTEM_PROMPT,
@@ -73,14 +73,15 @@ async def run_once() -> None:
 async def run_loop(interval: int, max_ticks: int) -> None:
     """一定間隔のハートビート・ループ。文脈を保つため client は1つを使い回す。"""
     interval = max(interval, config.MIN_INTERVAL_SEC)
+    stop_file = config.stop_path()
     print(f"🫀 ハートビート開始: 間隔 {interval}秒 / 最大 {max_ticks} 回 "
-          f"（{config.STOP_FILE.name} ファイルで停止）\n")
+          f"（{stop_file.name} ファイルで停止）\n")
 
     async with ClaudeSDKClient(build_options()) as client:
         for i in range(1, max_ticks + 1):
             # キルスイッチ確認
-            if config.STOP_FILE.exists():
-                print(f"⏹ {config.STOP_FILE.name} を検出したため停止します。")
+            if stop_file.exists():
+                print(f"⏹ {stop_file.name} を検出したため停止します。")
                 return
 
             print(f"--- ティック {i}/{max_ticks} ---")
