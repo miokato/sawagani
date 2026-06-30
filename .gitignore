@@ -1,6 +1,7 @@
 __pycache__/
 .claude/
 .codex/
+web-data/
 
 tasks.md
 MEMORY.md
