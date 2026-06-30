@@ -1,0 +1,8 @@
+[project]
+name = "sawagani"
+version = "0.1.0"
+description = "軽量なLLMエージェント（Claude Agent SDK / Codex CLI の最小例）"
+requires-python = ">=3.10"
+dependencies = [
+    "claude-agent-sdk",
+]
