@@ -15,6 +15,8 @@ TASKS_FILE = "tasks.md"    # やること定義（ユーザーが編集）
 MEMORY_FILE = "MEMORY.md"  # 実行ログ＝状態（アプリ本体が追記）
 STOP_FILE = "STOP"         # キルスイッチ（存在すればループ停止）
 CONFIG_FILE = "config.toml"  # ユーザーが編集する外部設定ファイル
+PID_FILE = "sawagani.pid"  # バックグラウンド実行中のプロセスID
+LOG_FILE = "sawagani.log"  # バックグラウンド実行ログ
 
 # 状態ディレクトリを上書きするための環境変数名
 HOME_ENV = "SAWAGANI_HOME"
@@ -72,6 +74,16 @@ def data_dir() -> Path:
 def stop_path() -> Path:
     """キルスイッチファイルの絶対パスを返す。"""
     return data_dir() / STOP_FILE
+
+
+def pid_path() -> Path:
+    """バックグラウンド実行の PID ファイルの絶対パスを返す。"""
+    return data_dir() / PID_FILE
+
+
+def log_path() -> Path:
+    """バックグラウンド実行ログの絶対パスを返す。"""
+    return data_dir() / LOG_FILE
 
 
 def web_data_dir(settings: Settings) -> Path:

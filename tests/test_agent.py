@@ -196,3 +196,17 @@ class TestSleepUntilNextTick:
 
         assert stopped is True
         assert sleep_calls == [1]
+
+
+class TestTickRange:
+    """tick_range(): ループ回数の範囲を決める。"""
+
+    def test_positive_max_ticks_is_finite(self):
+        """正の max_ticks は 1 始まりの有限範囲にする。"""
+        assert list(agent.tick_range(3)) == [1, 2, 3]
+
+    def test_zero_max_ticks_is_unbounded(self):
+        """0 はバックグラウンド運用向けの無制限ループとして扱う。"""
+        ticks = agent.tick_range(0)
+
+        assert [next(ticks), next(ticks), next(ticks)] == [1, 2, 3]

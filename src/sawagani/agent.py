@@ -5,7 +5,9 @@
 """
 
 from datetime import datetime
+from itertools import count
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any
 
 import anyio
@@ -211,26 +213,35 @@ async def sleep_until_next_tick(
     return False
 
 
+def tick_range(max_ticks: int) -> Iterator[int]:
+    """ティック番号を返す。max_ticks=0 は無制限ループを表す。"""
+    if max_ticks == 0:
+        return count(1)
+    return iter(range(1, max_ticks + 1))
+
+
 async def run_loop(interval: int, max_ticks: int) -> None:
     """一定間隔のハートビート・ループ。文脈を保つため client は1つを使い回す。"""
     interval = max(interval, settings.load_settings().min_interval_sec)
     stop_file = settings.stop_path()
-    print(f"🫀 ハートビート開始: 間隔 {interval}秒 / 最大 {max_ticks} 回 "
+    max_ticks_label = "無制限" if max_ticks == 0 else str(max_ticks)
+    print(f"🫀 ハートビート開始: 間隔 {interval}秒 / 最大 {max_ticks_label} 回 "
           f"（{stop_file.name} ファイルで停止）\n")
 
     async with ClaudeSDKClient(build_options()) as client:
-        for i in range(1, max_ticks + 1):
+        for i in tick_range(max_ticks):
             # キルスイッチ確認
             if stop_file.exists():
                 print(f"⏹ {stop_file.name} を検出したため停止します。")
                 return
 
-            print(f"--- ティック {i}/{max_ticks} ---")
+            print(f"--- ティック {i}/{max_ticks_label} ---")
             await tick(client)
 
-            if i < max_ticks:
+            if max_ticks == 0 or i < max_ticks:
                 if await sleep_until_next_tick(interval, stop_file):
                     print(f"⏹ {stop_file.name} を検出したため停止します。")
                     return
 
-    print(f"\n✅ 最大 {max_ticks} 回に達したため終了しました。")
+    if max_ticks > 0:
+        print(f"\n✅ 最大 {max_ticks} 回に達したため終了しました。")
