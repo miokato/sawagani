@@ -12,10 +12,14 @@ claude CLI のサブスク認証（Claude Max など）を利用するため API
 """
 
 import argparse
+import sys
 
 import anyio
 
 from . import agent, config
+
+INTERRUPT_EXCEPTIONS = (KeyboardInterrupt,)
+INTERRUPTED_EXIT_CODE = 130
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,10 +45,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.command == "loop":
-        anyio.run(agent.run_loop, args.interval, args.max_ticks)
-    else:  # "tick" または未指定
-        anyio.run(agent.run_once)
+    try:
+        if args.command == "loop":
+            anyio.run(agent.run_loop, args.interval, args.max_ticks)
+        else:  # "tick" または未指定
+            anyio.run(agent.run_once)
+    except INTERRUPT_EXCEPTIONS:
+        print("\n停止しました。", file=sys.stderr)
+        raise SystemExit(INTERRUPTED_EXIT_CODE) from None
 
 
 if __name__ == "__main__":
