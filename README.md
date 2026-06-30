@@ -96,12 +96,50 @@ enabled = false
 
 Discord から Sawagani に指示を出す場合は Discord Bot を使います。Webhook は通知向けで、Discord 側からの指示受け取りには使いません。
 
-1. Discord Developer Portal で Bot を作成し、`bot` と `applications.commands` スコープでサーバーに招待します。
-2. Bot Token を環境変数に設定します。
-3. `config.toml` の `[discord]` を有効化し、必要に応じて guild / channel / user を制限します。
+Sawagani は slash command（`/sawagani ...`）で操作します。slash command は Discord の Application Command 機能のため、Bot をサーバーへ招待する際に **`applications.commands` スコープでの認可が必須**です（トークンだけでは登録できず、`tree.sync()` が `403 Missing Access` になります）。
+
+### 1. Bot を作成する
+
+1. [Discord Developer Portal](https://discord.com/developers/applications) で New Application → アプリを作成。
+2. **Bot** タブで Bot を作成し、**Reset Token** でトークンを取得（手順5で使う）。
+3. **Bot** タブの Privileged Gateway Intents は**すべて OFF のままでよい**（Sawagani はメッセージ本文を読まないため）。
+   - 起動ログに `Privileged message content intent is missing` という警告が出ますが、slash command だけを使う構成では無害です。
+
+### 2. Bot をサーバーに招待する（`applications.commands` 認可が必須）
+
+1. **OAuth2 → URL Generator** を開く。
+2. **Scopes** で次の2つに**両方**チェック：
+   - ✅ `bot`
+   - ✅ `applications.commands`（これが無いと slash command を登録できない）
+3. **Bot Permissions** で最小限にチェック：
+   - ✅ View Channels (チャンネルを表示)
+   - ✅ Send Messages (メッセージを送る)
+4. 生成された URL をブラウザで開き、対象サーバーを選択して**「認可」ボタンを押し切る**。
+   - Bot が既にサーバーにいても、この手順で `applications.commands` スコープを追加できます（Kick 不要）。
+   - 認可済みかは「サーバー設定 → 連携サービス（Integrations）」に Bot が表示されるかで確認できます。
+
+### 3. ID を調べる
+
+Discord の「設定 → 詳細設定 → 開発者モード」を ON にすると、サーバー / チャンネル / ユーザーを右クリックして「IDをコピー」できます。
+
+### 4. `config.toml` の `[discord]` を設定する
+
+```toml
+[discord]
+enabled = true                          # 必須。false だと起動時に停止する
+guild_id = 123456789012345678           # 必須。本物のサーバーIDに置き換える
+channel_id = 123456789012345678         # 任意。特定チャンネルに絞らないなら行ごと削除
+allowed_user_ids = [123456789012345678] # 任意。利用者を絞らないなら行ごと削除
+```
+
+- `guild_id` は slash command の同期先になるため、**プレースホルダーの例の値のままだと `403 Missing Access` になります**。必ず実際のサーバーIDに置き換えてください。
+- `channel_id` / `allowed_user_ids` は省略可。指定するとそのチャンネル・ユーザーに実行を制限します。
+- ⚠️ Bot Token は**環境変数で渡し、`config.toml` には書かないこと**（コミットされるため）。
+
+### 5. 起動する
 
 ```bash
-export SAWAGANI_DISCORD_BOT_TOKEN="..."
+export SAWAGANI_DISCORD_BOT_TOKEN="..."   # 手順1で取得したトークン
 sawagani discord start
 ```
 
@@ -114,6 +152,12 @@ sawagani discord start
 ```
 
 `/sawagani task` は直接実行せず、まず `tasks.md` に追記します。次の tick で通常の権限境界の中で処理されます。
+
+### うまくいかないとき
+
+- **`403 Forbidden (error code: 50001): Missing Access`** … 招待時に `applications.commands` スコープが認可されていないか、`guild_id` が間違っています。手順2で両スコープにチェックして再認可し、`guild_id` が本物のサーバーIDかを確認してください。
+- **`SAWAGANI_DISCORD_BOT_TOKEN is not set`** … 環境変数が未設定です。手順5の `export` を確認してください。
+- **slash command がサーバーに出てこない** … 認可後すぐは反映に時間がかかることがあります。Bot を再起動し、`config.toml` の `guild_id` が招待先サーバーと一致しているか確認してください。
 
 ## テスト
 
