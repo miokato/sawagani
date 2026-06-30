@@ -12,6 +12,28 @@ from sawagani import cli
 class TestMain:
     """main(): CLI エントリとして終了時のふるまいを制御する。"""
 
+    def test_init_command_runs_project_initialization(self, monkeypatch, capsys):
+        """`sawagani init` は初期化処理を実行し、結果を表示する。"""
+        called = False
+
+        class FakeResult:
+            created = []
+            skipped = []
+
+        def fake_init_project():
+            nonlocal called
+            called = True
+            return FakeResult()
+
+        monkeypatch.setattr(cli.bootstrap, "init_project", fake_init_project)
+        monkeypatch.setattr("sys.argv", ["sawagani", "init"])
+
+        cli.main()
+
+        captured = capsys.readouterr()
+        assert called is True
+        assert "初期化しました" in captured.out
+
     def test_keyboard_interrupt_exits_without_traceback(self, monkeypatch, capsys):
         """Ctrl+C はスタックトレースではなく短い停止メッセージで終了する。"""
         class SimulatedInterrupt(Exception):

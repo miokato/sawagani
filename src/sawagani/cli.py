@@ -16,7 +16,7 @@ import sys
 
 import anyio
 
-from . import agent, settings
+from . import agent, bootstrap, settings
 
 INTERRUPT_EXCEPTIONS = (KeyboardInterrupt,)
 INTERRUPTED_EXIT_CODE = 130
@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sawagani: ハートビート駆動の自律エージェント")
     sub = parser.add_subparsers(dest="command")
 
+    sub.add_parser("init", help="初回利用に必要なファイルを作成")
     sub.add_parser("tick", help="1ティックだけ実行（テスト用）")
 
     loop_parser = sub.add_parser("loop", help="一定間隔の常駐ループ")
@@ -49,13 +50,25 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     try:
-        if args.command == "loop":
+        if args.command == "init":
+            result = bootstrap.init_project()
+            print_init_result(result)
+        elif args.command == "loop":
             anyio.run(agent.run_loop, args.interval, args.max_ticks)
         else:  # "tick" または未指定
             anyio.run(agent.run_once)
     except INTERRUPT_EXCEPTIONS:
         print("\n停止しました。", file=sys.stderr)
         raise SystemExit(INTERRUPTED_EXIT_CODE) from None
+
+
+def print_init_result(result: bootstrap.InitResult) -> None:
+    """init コマンドの結果を表示する。"""
+    print("初期化しました。")
+    for path in result.created:
+        print(f"  created: {path}")
+    for path in result.skipped:
+        print(f"  exists:  {path}")
 
 
 if __name__ == "__main__":
