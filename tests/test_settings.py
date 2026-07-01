@@ -32,6 +32,16 @@ class TestStopPath:
         assert settings.stop_path().resolve() == (tmp_path / settings.STOP_FILE).resolve()
 
 
+class TestSchedulePath:
+    """schedule_path(): 自己予約テーブルの絶対パスを返す。"""
+
+    def test_under_data_dir(self, tmp_path, monkeypatch):
+        """data_dir 配下の schedule.md を指す。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+
+        assert settings.schedule_path().resolve() == (tmp_path / settings.SCHEDULE_FILE).resolve()
+
+
 class TestWebDataDir:
     """web_data_dir(): Web 取得データの保存先ディレクトリを解決する。"""
 

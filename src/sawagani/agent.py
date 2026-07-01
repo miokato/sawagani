@@ -20,7 +20,7 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-from . import settings
+from . import schedule, settings
 
 WRITE_TOOL_NAMES = {"Write", "Edit", "MultiEdit"}
 WRITE_GUARD_MATCHER = "Write|Edit|MultiEdit|Bash"
@@ -54,8 +54,9 @@ def build_options() -> ClaudeAgentOptions:
                 HookMatcher(
                     matcher=WRITE_GUARD_MATCHER,
                     hooks=[
-                        make_storage_write_guard(
-                            web_data_dir,
+                        make_write_guard(
+                            allowed_dirs=[web_data_dir],
+                            allowed_files=[settings.schedule_path()],
                             allowed_bash_commands=allowed_bash_commands,
                         )
                     ],
@@ -207,6 +208,7 @@ def build_chat_options() -> ClaudeAgentOptions:
     web_data_dir.mkdir(parents=True, exist_ok=True)
     config_path = settings.data_dir() / settings.CONFIG_FILE
     tasks_path = settings.data_dir() / settings.TASKS_FILE
+    schedule_path = settings.schedule_path()
     web_tools = [
         tool
         for tool in loaded_settings.allowed_tools
@@ -232,7 +234,7 @@ def build_chat_options() -> ClaudeAgentOptions:
                     hooks=[
                         make_write_guard(
                             allowed_dirs=[web_data_dir],
-                            allowed_files=[config_path, tasks_path],
+                            allowed_files=[config_path, tasks_path, schedule_path],
                             allowed_bash_commands=allowed_bash_commands,
                         )
                     ],
@@ -285,6 +287,11 @@ def append_memory_entry(text: str) -> None:
 
 async def tick(client: ClaudeSDKClient) -> None:
     """1ティック分の処理。合成メッセージを送り、応答を表示する。"""
+    if settings.stop_path().exists():
+        print(f"⏸ {settings.STOP_FILE} を検出したためティックをスキップします。")
+        return
+
+    schedule.fire_due()
     await client.query(heartbeat_prompt())
 
     parts: list[str] = []
@@ -304,6 +311,10 @@ async def tick(client: ClaudeSDKClient) -> None:
 
 async def run_once() -> None:
     """1ティックだけ実行（テスト用）。"""
+    if settings.stop_path().exists():
+        print(f"⏸ {settings.STOP_FILE} を検出したためティックをスキップします。")
+        return
+
     async with ClaudeSDKClient(build_options()) as client:
         await tick(client)
 
@@ -350,18 +361,15 @@ async def run_loop(interval: int, max_ticks: int) -> None:
 
     async with ClaudeSDKClient(build_options()) as client:
         for i in tick_range(max_ticks):
-            # キルスイッチ確認
             if stop_file.exists():
-                print(f"⏹ {stop_file.name} を検出したため停止します。")
-                return
-
-            print(f"--- ティック {i}/{max_ticks_label} ---")
-            await tick(client)
+                print(f"⏸ {stop_file.name} を検出中のため一時停止しています。")
+            else:
+                print(f"--- ティック {i}/{max_ticks_label} ---")
+                await tick(client)
 
             if max_ticks == 0 or i < max_ticks:
                 if await sleep_until_next_tick(interval, stop_file):
-                    print(f"⏹ {stop_file.name} を検出したため停止します。")
-                    return
+                    print(f"⏸ {stop_file.name} を検出中のため一時停止しています。")
 
     if max_ticks > 0:
         print(f"\n✅ 最大 {max_ticks} 回に達したため終了しました。")

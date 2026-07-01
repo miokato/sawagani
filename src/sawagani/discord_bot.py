@@ -104,8 +104,11 @@ def handle_task(text: str) -> str:
 def format_status(result: daemon.StatusResult) -> str:
     """Discord status コマンド用に状態を短く整形する。"""
     if result.running:
-        return f"running pid={result.pid}"
-    return result.message
+        state = "paused" if result.paused else "running"
+        return f"{state} backend={result.backend}"
+    if result.registered:
+        return f"registered backend={result.backend}"
+    return f"{result.message} backend={result.backend}"
 
 
 async def handle_tick() -> str:

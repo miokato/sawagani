@@ -30,18 +30,19 @@ class TestMain:
         assert "Discord Bot を開始します" in captured.out
 
     def test_start_command_runs_daemon_start(self, monkeypatch, capsys):
-        """`sawagani start` はバックグラウンド起動処理を呼ぶ。"""
+        """`sawagani start` は OS 監視付き常駐の登録処理を呼ぶ。"""
         called: dict[str, int] = {}
 
         class FakeResult:
-            started = True
-            pid = 4242
-            message = "started"
+            installed = True
+            message = "installed"
+            backend = "launchd"
+            label = "com.sawagani.test"
+            service_path = None
             log_path = None
 
-        def fake_start(interval: int, max_ticks: int):
+        def fake_start(interval: int, max_ticks: int = 0):
             called["interval"] = interval
-            called["max_ticks"] = max_ticks
             return FakeResult()
 
         monkeypatch.setattr(cli.daemon, "start", fake_start)
@@ -50,8 +51,8 @@ class TestMain:
         cli.main()
 
         captured = capsys.readouterr()
-        assert called == {"interval": 10, "max_ticks": 0}
-        assert "started pid=4242" in captured.out
+        assert called == {"interval": 10}
+        assert "installed backend=launchd" in captured.out
 
     def test_stop_command_runs_daemon_stop(self, monkeypatch, capsys):
         """`sawagani stop` はバックグラウンド停止処理を呼ぶ。"""
@@ -59,8 +60,10 @@ class TestMain:
 
         class FakeResult:
             stopped = True
-            pid = 4242
             message = "stopped"
+            backend = "launchd"
+            label = "com.sawagani.test"
+            service_path = None
 
         def fake_stop():
             nonlocal called
@@ -74,17 +77,20 @@ class TestMain:
 
         captured = capsys.readouterr()
         assert called is True
-        assert "stopped pid=4242" in captured.out
+        assert "stopped backend=launchd" in captured.out
 
     def test_status_command_runs_daemon_status(self, monkeypatch, capsys):
         """`sawagani status` はバックグラウンド状態を表示する。"""
         called = False
 
         class FakeResult:
+            registered = True
             running = True
-            pid = 4242
+            paused = False
             message = "running"
-            pid_path = None
+            backend = "launchd"
+            label = "com.sawagani.test"
+            service_path = None
             log_path = None
 
         def fake_status():
@@ -99,7 +105,7 @@ class TestMain:
 
         captured = capsys.readouterr()
         assert called is True
-        assert "running pid=4242" in captured.out
+        assert "running backend=launchd" in captured.out
 
     def test_init_command_runs_project_initialization(self, monkeypatch, capsys):
         """`sawagani init` は初期化処理を実行し、結果を表示する。"""

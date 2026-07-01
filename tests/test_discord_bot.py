@@ -6,7 +6,7 @@ Discord への実接続は行わず、権限チェックとコマンド処理の
 import anyio
 import pytest
 
-from sawagani import daemon, discord_bot, settings
+from sawagani import discord_bot, scheduler, settings
 
 
 class TestBotToken:
@@ -207,15 +207,18 @@ class TestCommands:
 
     def test_format_status_running(self, tmp_path):
         """status コマンドは daemon.status() の結果を短く整形する。"""
-        result = daemon.StatusResult(
+        result = scheduler.SchedulerStatus(
+            registered=True,
             running=True,
-            pid=123,
+            paused=False,
             message="running",
-            pid_path=tmp_path / "sawagani.pid",
+            backend="launchd",
+            label="com.sawagani.test",
+            service_path=tmp_path / "agent.plist",
             log_path=tmp_path / "sawagani.log",
         )
 
-        assert discord_bot.format_status(result) == "running pid=123"
+        assert discord_bot.format_status(result) == "running backend=launchd"
 
     def test_handle_tick_runs_once(self, monkeypatch):
         """tick コマンドは agent.run_once() を1回実行する。"""

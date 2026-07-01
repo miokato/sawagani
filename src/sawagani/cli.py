@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init", help="初回利用に必要なファイルを作成")
-    start_parser = sub.add_parser("start", help="バックグラウンドで常駐ループを開始")
+    start_parser = sub.add_parser("start", help="OS 監視付き常駐を登録して開始")
     start_parser.add_argument(
         "--interval", type=int, default=loaded_settings.default_interval_sec,
         help=(
@@ -37,12 +37,8 @@ def parse_args() -> argparse.Namespace:
             f"既定 {loaded_settings.default_interval_sec}"
         ),
     )
-    start_parser.add_argument(
-        "--max-ticks", type=int, default=0,
-        help="総ティック数の上限。0 は無制限。既定 0",
-    )
-    sub.add_parser("stop", help="バックグラウンド実行を停止")
-    sub.add_parser("status", help="バックグラウンド実行の状態を表示")
+    sub.add_parser("stop", help="OS 監視付き常駐の登録を解除")
+    sub.add_parser("status", help="OS 監視付き常駐の状態を表示")
     discord_parser = sub.add_parser("discord", help="Discord Bot 連携")
     discord_sub = discord_parser.add_subparsers(dest="discord_command")
     discord_sub.add_parser("start", help="Discord Bot を前面で起動")
@@ -71,7 +67,7 @@ def main() -> None:
             result = bootstrap.init_project()
             print_init_result(result)
         elif args.command == "start":
-            result = daemon.start(args.interval, args.max_ticks)
+            result = daemon.start(args.interval)
             print_start_result(result)
         elif args.command == "stop":
             result = daemon.stop()
@@ -105,28 +101,33 @@ def print_init_result(result: bootstrap.InitResult) -> None:
 
 def print_start_result(result: daemon.StartResult) -> None:
     """start コマンドの結果を表示する。"""
-    if result.started:
-        print(f"started pid={result.pid}")
+    if result.installed:
+        print(f"installed backend={result.backend} label={result.label}")
     else:
-        print(f"{result.message} pid={result.pid}")
+        print(f"{result.message} backend={result.backend} label={result.label}")
+    print(f"service={result.service_path}")
     print(f"log={result.log_path}")
 
 
 def print_stop_result(result: daemon.StopResult) -> None:
     """stop コマンドの結果を表示する。"""
     if result.stopped:
-        print(f"stopped pid={result.pid}")
+        print(f"stopped backend={result.backend} label={result.label}")
     else:
-        print(result.message)
+        print(f"{result.message} backend={result.backend} label={result.label}")
+    print(f"service={result.service_path}")
 
 
 def print_status_result(result: daemon.StatusResult) -> None:
     """status コマンドの結果を表示する。"""
     if result.running:
-        print(f"running pid={result.pid}")
+        state = "paused" if result.paused else "running"
+        print(f"{state} backend={result.backend} label={result.label}")
+    elif result.registered:
+        print(f"registered backend={result.backend} label={result.label}")
     else:
-        print(result.message)
-    print(f"pidfile={result.pid_path}")
+        print(f"{result.message} backend={result.backend} label={result.label}")
+    print(f"service={result.service_path}")
     print(f"log={result.log_path}")
 
 

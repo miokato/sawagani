@@ -12,6 +12,17 @@ DEFAULT_TASKS_TEMPLATE = """\
 空のままならエージェントは何もしません。
 """
 
+DEFAULT_SCHEDULE_TEMPLATE = """\
+# schedule.md
+
+Sawagani に未来の作業を予約したい場合に使います。
+例:
+- [ ] at:2026-07-02T07:00:00+09:00 | 日報を書く
+- [ ] cron:0 9 * * MON | 週次レビュー
+
+予約は次回以降のティック開始時に tasks.md へ追加されます。
+"""
+
 DEFAULT_CONFIG_TEMPLATE = """\
 # Sawagani の設定ファイル（コードを触らず編集できる）。
 # このファイルは sawagani init が生成するローカル設定です。
@@ -83,6 +94,7 @@ def init_project() -> InitResult:
     loaded_settings = settings.load_settings()
 
     write_file_if_missing(data_dir / settings.TASKS_FILE, DEFAULT_TASKS_TEMPLATE, result)
+    write_file_if_missing(data_dir / settings.SCHEDULE_FILE, DEFAULT_SCHEDULE_TEMPLATE, result)
     write_file_if_missing(data_dir / settings.CONFIG_FILE, DEFAULT_CONFIG_TEMPLATE, result)
     ensure_dir_if_missing(settings.web_data_dir(loaded_settings), result)
 

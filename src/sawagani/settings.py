@@ -12,6 +12,7 @@ from pathlib import Path
 
 # --- 状態ファイル名（データディレクトリ内での相対名） ---
 TASKS_FILE = "tasks.md"    # やること定義（ユーザーが編集）
+SCHEDULE_FILE = "schedule.md"  # 自己予約テーブル（ユーザー/エージェントが編集）
 MEMORY_FILE = "MEMORY.md"  # 実行ログ＝状態（アプリ本体が追記）
 STOP_FILE = "STOP"         # キルスイッチ（存在すればループ停止）
 CONFIG_FILE = "config.toml"  # ユーザーが編集する外部設定ファイル
@@ -63,6 +64,11 @@ def system_prompt(web_data_dir_path: Path) -> str:
    - `{MEMORY_FILE}` への追記はアプリ本体が行うため、あなたは変更しないこと。
    - 同じ作業を {MEMORY_FILE} に記録済みなら繰り返さない（重複防止）。
 
+予約したい作業は `{SCHEDULE_FILE}` に次の形式で追記できる。
+- `- [ ] at:2026-07-02T07:00:00+09:00 | 日報を書く`
+- `- [ ] cron:0 9 * * MON | 週次レビュー`
+予約は次回以降のティック開始時に tasks.md へ注入される。実行精度はティック間隔に依存する。
+
 情報収集タスクでは WebSearch で探し、必要なら WebFetch でページ本文を取得する。
 得た情報は `{web_data_dir_path}` 以下に保存し、最終応答に保存先・要点・出典URLを含めること。
 設定で Bash ダウンロードが許可されている場合、画像/PDFなどの保存に curl/wget を使ってよい。
@@ -81,6 +87,8 @@ def chat_system_prompt(web_data_dir_path: Path, config_path: Path, tasks_path: P
 できること:
 - `{TASKS_FILE}` / `{MEMORY_FILE}` / `{CONFIG_FILE}` を読んで、現在の状況や設定を説明する。
 - `{tasks_path}` にタスクを追加する。
+- `{SCHEDULE_FILE}` に予約を追加する。形式は `- [ ] at:<ISO8601> | タスク文` または
+  `- [ ] cron:<cron式> | タスク文`。予約は次ティックで処理され、精度は interval に依存する。
 - `{config_path}` を TOML として壊さないように編集し、interval・allowed_tools・discord 制限などを変更する。
 - WebSearch / WebFetch が許可されている場合は情報収集に使い、取得した情報を `{web_data_dir_path}` 以下に保存する。
 - 設定で Bash ダウンロードが許可されている場合、画像/PDFなどの保存に curl/wget を使ってよい。
@@ -126,6 +134,11 @@ def data_dir() -> Path:
 def stop_path() -> Path:
     """キルスイッチファイルの絶対パスを返す。"""
     return data_dir() / STOP_FILE
+
+
+def schedule_path() -> Path:
+    """自己予約テーブルファイルの絶対パスを返す。"""
+    return data_dir() / SCHEDULE_FILE
 
 
 def pid_path() -> Path:

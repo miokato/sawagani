@@ -13,16 +13,18 @@ class TestInitProject:
     """init_project(): データディレクトリに初期ファイルを用意する。"""
 
     def test_creates_initial_files_under_data_dir(self, tmp_path, monkeypatch):
-        """tasks.md / config.toml / web-data を data_dir 配下に作る。"""
+        """tasks.md / schedule.md / config.toml / web-data を data_dir 配下に作る。"""
         monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
 
         result = bootstrap.init_project()
 
         assert (tmp_path / settings.TASKS_FILE).is_file()
+        assert (tmp_path / settings.SCHEDULE_FILE).is_file()
         assert (tmp_path / settings.CONFIG_FILE).is_file()
         assert (tmp_path / settings.DEFAULT_WEB_DATA_DIR).is_dir()
         assert result.created == [
             tmp_path / settings.TASKS_FILE,
+            tmp_path / settings.SCHEDULE_FILE,
             tmp_path / settings.CONFIG_FILE,
             tmp_path / settings.DEFAULT_WEB_DATA_DIR,
         ]
@@ -39,7 +41,7 @@ class TestInitProject:
 
         assert tasks_path.read_text(encoding="utf-8") == "既存タスク\n"
         assert config_path.read_text(encoding="utf-8") == '[agent]\nallowed_tools = ["Read"]\n'
-        assert result.created == [tmp_path / settings.DEFAULT_WEB_DATA_DIR]
+        assert result.created == [tmp_path / settings.SCHEDULE_FILE, tmp_path / settings.DEFAULT_WEB_DATA_DIR]
         assert result.skipped == [tasks_path, config_path]
 
 

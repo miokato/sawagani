@@ -4,7 +4,8 @@ __pycache__/
 web-data/
 
 tasks.md
+schedule.md
 MEMORY.md
-PLAN.md
+PLAN*.md
 RDD.md
 config.toml

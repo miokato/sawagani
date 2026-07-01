@@ -222,6 +222,27 @@ class TestStorageWriteGuard:
 
         assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
 
+    def test_allows_schedule_file_when_explicitly_allowed(self, tmp_path, monkeypatch):
+        """schedule.md を許可ファイルに含めれば Edit を許可する。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        guard = agent.make_write_guard(
+            allowed_dirs=[tmp_path / "web-data"],
+            allowed_files=[settings.schedule_path()],
+        )
+
+        result = anyio.run(
+            guard,
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Edit",
+                "tool_input": {"file_path": settings.SCHEDULE_FILE},
+            },
+            "tool-1",
+            {"signal": None},
+        )
+
+        assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+
 
 class TestWriteGuard:
     """make_write_guard(): 会話モード向けに許可ファイルと許可ディレクトリを制限する。"""
@@ -384,6 +405,70 @@ class TestRunChatTurn:
         assert client.queries == ["今の設定を教えて"]
 
 
+class TestTickSchedule:
+    """tick(): heartbeat 前に予約を発火し、STOP 中は何もしない。"""
+
+    def test_tick_fires_schedule_before_query(self, tmp_path, monkeypatch):
+        """tick() は LLM query 前に schedule.fire_due() を呼ぶ。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        events: list[str] = []
+
+        async def fake_query(prompt: str):
+            events.append("query")
+
+        def fake_fire_due():
+            events.append("schedule")
+            return []
+
+        client = FakeClient("IDLE")
+        monkeypatch.setattr(client, "query", fake_query)
+        monkeypatch.setattr(agent.schedule, "fire_due", fake_fire_due)
+
+        anyio.run(agent.tick, client)
+
+        assert events == ["schedule", "query"]
+
+    def test_tick_skips_schedule_and_query_when_stop_exists(self, tmp_path, monkeypatch):
+        """STOP 中の tick() は予約発火も LLM query もしない。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        settings.stop_path().touch()
+        fired = False
+        client = FakeClient("IDLE")
+
+        def fake_fire_due():
+            nonlocal fired
+            fired = True
+            return []
+
+        monkeypatch.setattr(agent.schedule, "fire_due", fake_fire_due)
+
+        anyio.run(agent.tick, client)
+
+        assert fired is False
+        assert client.queries == []
+
+
+class TestRunOnce:
+    """run_once(): 単発ティックの起動境界を扱う。"""
+
+    def test_skips_client_creation_when_stop_exists(self, tmp_path, monkeypatch):
+        """STOP 中は ClaudeSDKClient を作らず即 return する。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        settings.stop_path().touch()
+        created = False
+
+        class FakeSDKClient:
+            def __init__(self, options):
+                nonlocal created
+                created = True
+
+        monkeypatch.setattr(agent, "ClaudeSDKClient", FakeSDKClient)
+
+        anyio.run(agent.run_once)
+
+        assert created is False
+
+
 class TestTick:
     """tick(): LLM 応答の表示と MEMORY 追記を担う。"""
 
@@ -446,3 +531,43 @@ class TestTickRange:
         ticks = agent.tick_range(0)
 
         assert [next(ticks), next(ticks), next(ticks)] == [1, 2, 3]
+
+
+class TestRunLoopStopPauses:
+    """run_loop(): STOP 中はプロセスを落とさずティックをスキップする。"""
+
+    def test_stop_file_skips_tick_body(self, tmp_path, monkeypatch):
+        """STOP があれば tick と schedule.fire_due を呼ばず、待機処理へ進む。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        settings.stop_path().touch()
+        called: list[str] = []
+
+        class FakeSDKClient:
+            def __init__(self, options):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        async def fake_tick(client):
+            called.append("tick")
+
+        def fake_fire_due():
+            called.append("schedule")
+            return []
+
+        async def fake_sleep_until_next_tick(interval, stop_file):
+            called.append("sleep")
+            return False
+
+        monkeypatch.setattr(agent, "ClaudeSDKClient", FakeSDKClient)
+        monkeypatch.setattr(agent, "tick", fake_tick)
+        monkeypatch.setattr(agent.schedule, "fire_due", fake_fire_due)
+        monkeypatch.setattr(agent, "sleep_until_next_tick", fake_sleep_until_next_tick)
+
+        anyio.run(agent.run_loop, 1, 2)
+
+        assert called == ["sleep"]

@@ -1,136 +1,27 @@
-"""Sawagani の軽量バックグラウンド実行を管理する内部モジュール。"""
+"""Sawagani の OS 監視付き常駐ジョブを管理する互換ラッパ。"""
 
-import os
-import signal
-import subprocess
-import sys
-from dataclasses import dataclass
-from pathlib import Path
+from . import scheduler
 
-from . import settings
+StartResult = scheduler.InstallResult
+StopResult = scheduler.UninstallResult
+StatusResult = scheduler.SchedulerStatus
 
 
-@dataclass
-class StartResult:
-    """start() の実行結果。"""
+def start(interval: int, max_ticks: int = 0) -> StartResult:
+    """Sawagani loop を launchd/systemd の監視付き常駐として登録する。
 
-    started: bool
-    pid: int | None
-    message: str
-    log_path: Path
-
-
-@dataclass
-class StopResult:
-    """stop() の実行結果。"""
-
-    stopped: bool
-    pid: int | None
-    message: str
-
-
-@dataclass
-class StatusResult:
-    """status() の実行結果。"""
-
-    running: bool
-    pid: int | None
-    message: str
-    pid_path: Path
-    log_path: Path
-
-
-def read_pid(path: Path | None = None) -> int | None:
-    """PID ファイルからプロセスIDを読む。読めなければ None を返す。"""
-    pid_file = path or settings.pid_path()
-    try:
-        return int(pid_file.read_text(encoding="utf-8").strip())
-    except (FileNotFoundError, ValueError):
-        return None
-
-
-def remove_pid_file(path: Path | None = None) -> None:
-    """PID ファイルがあれば削除する。"""
-    pid_file = path or settings.pid_path()
-    try:
-        pid_file.unlink()
-    except FileNotFoundError:
-        pass
-
-
-def is_process_alive(pid: int) -> bool:
-    """PID のプロセスが生きているか確認する。"""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def start(interval: int, max_ticks: int) -> StartResult:
-    """Sawagani loop をバックグラウンドプロセスとして起動する。"""
-    pid_file = settings.pid_path()
-    log_file = settings.log_path()
-    pid_file.parent.mkdir(parents=True, exist_ok=True)
-
-    existing_pid = read_pid(pid_file)
-    if existing_pid is not None:
-        if is_process_alive(existing_pid):
-            return StartResult(False, existing_pid, "already running", log_file)
-        remove_pid_file(pid_file)
-
-    log_handle = log_file.open("a", encoding="utf-8")
-    cmd = [
-        sys.executable,
-        "-m",
-        "sawagani",
-        "loop",
-        "--interval",
-        str(interval),
-        "--max-ticks",
-        str(max_ticks),
-    ]
-    process = subprocess.Popen(
-        cmd,
-        cwd=settings.data_dir(),
-        stdout=log_handle,
-        stderr=log_handle,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    log_handle.close()
-    pid_file.write_text(f"{process.pid}\n", encoding="utf-8")
-    return StartResult(True, process.pid, "started", log_file)
+    ``max_ticks`` は旧 PID 管理 API との互換引数。OS 監視付き常駐では常に無制限で
+    動かすため無視する。
+    """
+    del max_ticks
+    return scheduler.install(interval)
 
 
 def stop() -> StopResult:
-    """PID ファイルのプロセスへ SIGTERM を送り、PID ファイルを削除する。"""
-    pid_file = settings.pid_path()
-    pid = read_pid(pid_file)
-    if pid is None:
-        return StopResult(False, None, "not running")
-
-    if not is_process_alive(pid):
-        remove_pid_file(pid_file)
-        return StopResult(False, pid, "not running")
-
-    os.kill(pid, signal.SIGTERM)
-    remove_pid_file(pid_file)
-    return StopResult(True, pid, "stopped")
+    """Sawagani の OS 監視付き常駐ジョブを解除する。"""
+    return scheduler.uninstall()
 
 
 def status() -> StatusResult:
-    """バックグラウンド実行の状態を返す。"""
-    pid_file = settings.pid_path()
-    log_file = settings.log_path()
-    pid = read_pid(pid_file)
-    if pid is None:
-        return StatusResult(False, None, "stopped", pid_file, log_file)
-
-    if is_process_alive(pid):
-        return StatusResult(True, pid, "running", pid_file, log_file)
-
-    remove_pid_file(pid_file)
-    return StatusResult(False, pid, "stopped", pid_file, log_file)
+    """Sawagani の OS 監視付き常駐ジョブ状態を返す。"""
+    return scheduler.status()
