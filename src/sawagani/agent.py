@@ -4,10 +4,13 @@
 設定は settings モジュールから取得し、CLI（引数解析）には依存しない。
 """
 
+import asyncio
+import contextlib
+import signal
 from datetime import datetime
 from itertools import count
 from pathlib import Path
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 import shlex
 
@@ -285,7 +288,10 @@ def append_memory_entry(text: str) -> None:
         f.write(f"- {timestamp} {summary}\n")
 
 
-async def tick(client: ClaudeSDKClient) -> None:
+async def tick(
+    client: ClaudeSDKClient,
+    notifier: Callable[[str], Awaitable[None]] | None = None,
+) -> None:
     """1ティック分の処理。合成メッセージを送り、応答を表示する。"""
     if settings.stop_path().exists():
         print(f"⏸ {settings.STOP_FILE} を検出したためティックをスキップします。")
@@ -307,6 +313,11 @@ async def tick(client: ClaudeSDKClient) -> None:
     else:
         print(text)
         append_memory_entry(text)
+        if notifier is not None:
+            try:
+                await notifier(text)
+            except Exception as exc:
+                print(f"Discord 通知に失敗しました: {exc}")
 
 
 async def run_once() -> None:
@@ -342,6 +353,128 @@ async def sleep_until_next_tick(
             return True
 
     return False
+
+
+async def wait_for_wake_or_timeout(
+    interval: int,
+    wake: asyncio.Event,
+    stop_event: asyncio.Event | None = None,
+    check_interval: float = 1.0,
+) -> bool:
+    """interval 経過・wake・停止イベントのいずれかまで待つ。"""
+    remaining = float(interval)
+    while remaining > 0:
+        if stop_event is not None and stop_event.is_set():
+            return False
+        if wake.is_set():
+            wake.clear()
+            return True
+
+        sleep_for = min(check_interval, remaining)
+        try:
+            await asyncio.wait_for(wake.wait(), timeout=sleep_for)
+        except TimeoutError:
+            remaining -= sleep_for
+            continue
+        wake.clear()
+        return True
+
+    return False
+
+
+def install_signal_handlers(stop_event: asyncio.Event) -> list[tuple[signal.Signals, Callable[[], None]]]:
+    """SIGTERM/SIGINT を受けたら stop_event を立てる。登録できない環境では何もしない。"""
+    loop = asyncio.get_running_loop()
+    installed: list[tuple[signal.Signals, Callable[[], None]]] = []
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, stop_event.set)
+        except (NotImplementedError, RuntimeError, ValueError):
+            continue
+        installed.append((sig, stop_event.set))
+    return installed
+
+
+def remove_signal_handlers(installed: list[tuple[signal.Signals, Callable[[], None]]]) -> None:
+    """install_signal_handlers() で登録した signal handler を外す。"""
+    if not installed:
+        return
+    loop = asyncio.get_running_loop()
+    for sig, _ in installed:
+        with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
+            loop.remove_signal_handler(sig)
+
+
+async def run_service(interval: int) -> None:
+    """ハートビートと Discord Bot を1プロセス・1 asyncio ループで常駐実行する。"""
+    from . import discord_bot
+
+    loaded_settings = settings.load_settings()
+    interval = max(interval, loaded_settings.min_interval_sec)
+    stop_file = settings.stop_path()
+    lane = asyncio.Lock()
+    wake = asyncio.Event()
+    stop_event = asyncio.Event()
+    installed_handlers = install_signal_handlers(stop_event)
+    bot: Any | None = None
+
+    print(f"🫀 Sawagani service 開始: 間隔 {interval}秒 / {stop_file.name} で一時停止")
+
+    async with ClaudeSDKClient(build_options()) as client:
+        async def notifier(text: str) -> None:
+            if bot is None or loaded_settings.discord.channel_id is None:
+                return
+            await discord_bot.notify(bot, loaded_settings.discord.channel_id, text)
+
+        async def heartbeat_loop() -> None:
+            tick_count = 1
+            while not stop_event.is_set():
+                if stop_file.exists():
+                    print(f"⏸ {stop_file.name} を検出中のため一時停止しています。")
+                else:
+                    async with lane:
+                        print(f"--- サービスティック {tick_count} ---")
+                        await tick(client, notifier)
+                        tick_count += 1
+                await wait_for_wake_or_timeout(interval, wake, stop_event)
+
+        service_tasks: list[asyncio.Task[Any]] = [asyncio.create_task(heartbeat_loop())]
+
+        if loaded_settings.discord.enabled:
+            bot = discord_bot.create_bot(loaded_settings.discord, lane=lane, wake=wake)
+            service_tasks.append(
+                asyncio.create_task(
+                    discord_bot.start_bot(
+                        loaded_settings.discord,
+                        lane=lane,
+                        wake=wake,
+                        bot=bot,
+                    )
+                )
+            )
+
+        stop_waiter = asyncio.create_task(stop_event.wait())
+        try:
+            done, _ = await asyncio.wait(
+                [*service_tasks, stop_waiter],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in done:
+                if task is stop_waiter or task.cancelled():
+                    continue
+                task.result()
+        finally:
+            stop_event.set()
+            stop_waiter.cancel()
+            for task in service_tasks:
+                task.cancel()
+            await asyncio.gather(*service_tasks, stop_waiter, return_exceptions=True)
+            if bot is not None:
+                is_closed = getattr(bot, "is_closed", None)
+                closed = is_closed() if callable(is_closed) else bool(is_closed)
+                if not closed:
+                    await bot.close()
+            remove_signal_handlers(installed_handlers)
 
 
 def tick_range(max_ticks: int) -> Iterator[int]:

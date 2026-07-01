@@ -21,11 +21,13 @@ allow_bash_downloads = false
 allowed_commands = ["curl", "wget"]
 
 [discord]
-# Discord から Sawagani を操作する場合に true。Bot Token は環境変数に設定する。
+# Discord から Sawagani を操作する場合に true。
+# Bot Token は config.toml には書かず、環境変数または ~/.config/sawagani/secrets に置く。
 enabled = false
 # メンション/DM で Sawagani と会話する場合に true。
-# 有効にすると会話から config.toml / tasks.md を編集できるため、allowed_user_ids で利用者を絞る。
+# 有効にすると会話から config.toml / tasks.md / schedule.md を編集できるため、allowed_user_ids で利用者を絞る。
 conversation = false
+# channel_id を指定すると、自律作業の非 IDLE 結果をそのチャンネルへ通知する。
 # guild_id = 123456789012345678
 # channel_id = 123456789012345678
 # allowed_user_ids = [123456789012345678]

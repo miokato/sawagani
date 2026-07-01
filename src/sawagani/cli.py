@@ -44,6 +44,15 @@ def parse_args() -> argparse.Namespace:
     discord_sub.add_parser("start", help="Discord Bot を前面で起動")
     sub.add_parser("tick", help="1ティックだけ実行（テスト用）")
 
+    serve_parser = sub.add_parser("serve", help="統合常駐サービスを前面で実行")
+    serve_parser.add_argument(
+        "--interval", type=int, default=loaded_settings.default_interval_sec,
+        help=(
+            f"ティック間隔（秒, 下限 {loaded_settings.min_interval_sec}）。"
+            f"既定 {loaded_settings.default_interval_sec}"
+        ),
+    )
+
     loop_parser = sub.add_parser("loop", help="一定間隔の常駐ループ")
     loop_parser.add_argument(
         "--interval", type=int, default=loaded_settings.default_interval_sec,
@@ -83,6 +92,8 @@ def main() -> None:
                 raise SystemExit("discord subcommand is required")
         elif args.command == "loop":
             anyio.run(agent.run_loop, args.interval, args.max_ticks)
+        elif args.command == "serve":
+            anyio.run(agent.run_service, args.interval)
         else:  # "tick" または未指定
             anyio.run(agent.run_once)
     except INTERRUPT_EXCEPTIONS:

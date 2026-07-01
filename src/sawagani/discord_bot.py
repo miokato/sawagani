@@ -2,13 +2,12 @@
 
 import asyncio
 import importlib
-import os
 from dataclasses import dataclass
 from typing import Any
 
 from . import agent, daemon, settings, tasks
 
-DISCORD_BOT_TOKEN_ENV = "SAWAGANI_DISCORD_BOT_TOKEN"
+DISCORD_BOT_TOKEN_ENV = settings.DISCORD_BOT_TOKEN_ENV
 
 
 @dataclass
@@ -20,11 +19,8 @@ class ConversationState:
 
 
 def bot_token() -> str:
-    """Discord Bot Token を環境変数から読む。"""
-    token = os.environ.get(DISCORD_BOT_TOKEN_ENV, "").strip()
-    if not token:
-        raise RuntimeError(f"{DISCORD_BOT_TOKEN_ENV} is not set")
-    return token
+    """Discord Bot Token を settings の解決順で読む。"""
+    return settings.load_bot_token()
 
 
 def is_authorized(
@@ -95,9 +91,11 @@ def chunk_message(text: str, limit: int = 2000) -> list[str]:
     return chunks or [text]
 
 
-def handle_task(text: str) -> str:
+def handle_task(text: str, wake: Any | None = None) -> str:
     """Discord task コマンド: tasks.md に依頼を追記する。"""
     path = tasks.append_task(text, source="discord")
+    if wake is not None:
+        wake.set()
     return f"{path.name} に追加しました。"
 
 
@@ -129,7 +127,11 @@ async def reject_if_unauthorized(interaction: Any, discord_settings: settings.Di
     return True
 
 
-def create_bot(discord_settings: settings.DiscordSettings) -> Any:
+def create_bot(
+    discord_settings: settings.DiscordSettings,
+    lane: asyncio.Lock | None = None,
+    wake: Any | None = None,
+) -> Any:
     """discord.py の Bot を構築する。"""
     discord = importlib.import_module("discord")
     commands = importlib.import_module("discord.ext.commands")
@@ -153,14 +155,35 @@ def create_bot(discord_settings: settings.DiscordSettings) -> Any:
     async def task_command(interaction: Any, text: str) -> None:
         if await reject_if_unauthorized(interaction, discord_settings):
             return
-        await interaction.response.send_message(handle_task(text), ephemeral=True)
+        await interaction.response.send_message(handle_task(text, wake=wake), ephemeral=True)
 
     @group.command(name="tick", description="Sawagani を1回だけ実行します")
     async def tick_command(interaction: Any) -> None:
         if await reject_if_unauthorized(interaction, discord_settings):
             return
         await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(await handle_tick(), ephemeral=True)
+        if lane is None:
+            message = await handle_tick()
+        else:
+            async with lane:
+                message = await handle_tick()
+        await interaction.followup.send(message, ephemeral=True)
+
+    @group.command(name="pause", description="Sawagani のハートビートを一時停止します")
+    async def pause_command(interaction: Any) -> None:
+        if await reject_if_unauthorized(interaction, discord_settings):
+            return
+        settings.stop_path().touch()
+        await interaction.response.send_message("一時停止しました。", ephemeral=True)
+
+    @group.command(name="resume", description="Sawagani のハートビートを再開します")
+    async def resume_command(interaction: Any) -> None:
+        if await reject_if_unauthorized(interaction, discord_settings):
+            return
+        settings.stop_path().unlink(missing_ok=True)
+        if wake is not None:
+            wake.set()
+        await interaction.response.send_message("再開しました。", ephemeral=True)
 
     async def get_conversation(channel_id: int) -> ConversationState:
         """チャンネルごとの ClaudeSDKClient を遅延生成して返す。"""
@@ -218,7 +241,11 @@ def create_bot(discord_settings: settings.DiscordSettings) -> Any:
             state = await get_conversation(channel_id)
             async with state.lock:
                 try:
-                    reply = await agent.run_chat_turn(state.client, text)
+                    if lane is None:
+                        reply = await agent.run_chat_turn(state.client, text)
+                    else:
+                        async with lane:
+                            reply = await agent.run_chat_turn(state.client, text)
                 except Exception:
                     await message.reply("会話処理中にエラーが発生しました。ログを確認してください。")
                     raise
@@ -238,6 +265,36 @@ def create_bot(discord_settings: settings.DiscordSettings) -> Any:
     # 呼ぶため、無引数関数を動的に差し込む。属性の型（self を取るメソッド）とは一致しない
     # ので、型不一致を避けるため setattr で代入する。
     setattr(bot, "setup_hook", setup_hook)
+    return bot
+
+
+async def notify(bot: Any, channel_id: int, text: str) -> None:
+    """Bot から指定チャンネルへ能動通知を送る。"""
+    channel = bot.get_channel(channel_id)
+    if channel is None and hasattr(bot, "fetch_channel"):
+        channel = await bot.fetch_channel(channel_id)
+    if channel is None:
+        raise RuntimeError(f"Discord channel not found: {channel_id}")
+
+    for chunk in chunk_message(text):
+        await channel.send(chunk)
+
+
+async def start_bot(
+    discord_settings: settings.DiscordSettings,
+    lane: asyncio.Lock | None = None,
+    wake: Any | None = None,
+    bot: Any | None = None,
+) -> Any:
+    """統合サービス内で Discord Bot を開始する。"""
+    bot = bot or create_bot(discord_settings, lane=lane, wake=wake)
+    try:
+        await bot.start(bot_token())
+    finally:
+        is_closed = getattr(bot, "is_closed", None)
+        closed = is_closed() if callable(is_closed) else bool(is_closed)
+        if not closed:
+            await bot.close()
     return bot
 
 

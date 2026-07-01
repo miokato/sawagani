@@ -54,6 +54,26 @@ class TestMain:
         assert called == {"interval": 10}
         assert "installed backend=launchd" in captured.out
 
+    def test_serve_command_runs_integrated_service(self, monkeypatch):
+        """`sawagani serve` は統合サービス本体を前面実行する。"""
+        called: dict[str, int] = {}
+
+        async def fake_run_service(interval: int):
+            called["interval"] = interval
+
+        real_anyio_run = cli.anyio.run
+
+        def fake_anyio_run(func, *args):
+            real_anyio_run(func, *args)
+
+        monkeypatch.setattr(cli.agent, "run_service", fake_run_service)
+        monkeypatch.setattr(cli.anyio, "run", fake_anyio_run)
+        monkeypatch.setattr("sys.argv", ["sawagani", "serve", "--interval", "15"])
+
+        cli.main()
+
+        assert called == {"interval": 15}
+
     def test_stop_command_runs_daemon_stop(self, monkeypatch, capsys):
         """`sawagani stop` はバックグラウンド停止処理を呼ぶ。"""
         called = False

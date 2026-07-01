@@ -10,7 +10,7 @@ from sawagani import discord_bot, scheduler, settings
 
 
 class TestBotToken:
-    """bot_token(): Discord Bot Token を環境変数から読む。"""
+    """bot_token(): Discord Bot Token を設定解決経由で読む。"""
 
     def test_reads_token_from_environment(self, monkeypatch):
         """SAWAGANI_DISCORD_BOT_TOKEN が設定されていればその値を返す。"""
@@ -24,6 +24,17 @@ class TestBotToken:
 
         with pytest.raises(RuntimeError):
             discord_bot.bot_token()
+
+    def test_reads_token_from_secrets_file(self, monkeypatch, tmp_path):
+        """環境変数が無ければ settings.load_bot_token() 経由で secrets ファイルを読む。"""
+        monkeypatch.delenv(discord_bot.DISCORD_BOT_TOKEN_ENV, raising=False)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        path = settings.secrets_path()
+        path.parent.mkdir(parents=True)
+        path.write_text("SAWAGANI_DISCORD_BOT_TOKEN=file-token\n", encoding="utf-8")
+        path.chmod(0o600)
+
+        assert discord_bot.bot_token() == "file-token"
 
 
 class TestAuthorization:
@@ -204,6 +215,20 @@ class TestCommands:
 
         assert "tasks.md に追加しました" in message
         assert "AIニュースを調べる" in (tmp_path / settings.TASKS_FILE).read_text(encoding="utf-8")
+
+    def test_handle_task_sets_wake_event(self, tmp_path, monkeypatch):
+        """統合サービス内の task コマンドはハートビート待機を即座に起こす。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        called = False
+
+        class FakeWake:
+            def set(self):
+                nonlocal called
+                called = True
+
+        discord_bot.handle_task("AIニュースを調べる", wake=FakeWake())
+
+        assert called is True
 
     def test_format_status_running(self, tmp_path):
         """status コマンドは daemon.status() の結果を短く整形する。"""

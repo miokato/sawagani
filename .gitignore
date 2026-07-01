@@ -9,3 +9,4 @@ MEMORY.md
 PLAN*.md
 RDD.md
 config.toml
+*.log

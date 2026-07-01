@@ -131,12 +131,14 @@ def build_launchd_plist(
             python,
             "-m",
             "sawagani",
-            "loop",
+            "serve",
             "--interval",
             str(interval),
         ],
         "RunAtLoad": True,
         "KeepAlive": True,
+        "ProcessType": "Background",
+        "ThrottleInterval": 20,
         "WorkingDirectory": str(data_dir),
         "StandardOutPath": str(log),
         "StandardErrorPath": str(log),
@@ -163,7 +165,7 @@ def build_systemd_unit(interval: int, python: str, data_dir: Path) -> str:
             "",
             "[Service]",
             "Type=simple",
-            f"ExecStart={shlex.quote(python)} -m sawagani loop --interval {interval}",
+            f"ExecStart={shlex.quote(python)} -m sawagani serve --interval {interval}",
             "Restart=always",
             f"Environment={systemd_quote(f'{settings.HOME_ENV}={data_dir}')}",
             f"WorkingDirectory={systemd_quote(data_dir)}",
@@ -192,6 +194,7 @@ def install(interval: int, runner: Runner = run_command) -> InstallResult:
     label = agent_label(data_dir, backend)
     service_path = backend_service_path(backend, data_dir)
     service_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     if backend == "launchd":
         service_path.write_bytes(
@@ -204,8 +207,9 @@ def install(interval: int, runner: Runner = run_command) -> InstallResult:
                 label=label,
             )
         )
+        service_path.chmod(0o600)
         domain = f"gui/{os.getuid()}"
-        runner(["launchctl", "bootout", domain, label])
+        runner(["launchctl", "bootout", f"{domain}/{label}"])
         result = runner(["launchctl", "bootstrap", domain, str(service_path)])
         if result.returncode != 0:
             result = runner(["launchctl", "load", "-w", str(service_path)])
@@ -229,7 +233,7 @@ def uninstall(runner: Runner = run_command) -> UninstallResult:
 
     if backend == "launchd":
         domain = f"gui/{os.getuid()}"
-        result = runner(["launchctl", "bootout", domain, label])
+        result = runner(["launchctl", "bootout", f"{domain}/{label}"])
         if result.returncode != 0 and service_path.exists():
             result = runner(["launchctl", "unload", "-w", str(service_path)])
         if result.returncode == 0:

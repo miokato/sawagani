@@ -5,6 +5,8 @@
 環境変数 ``SAWAGANI_HOME`` か、無ければ実行時カレントに基づく（パッケージ位置に依存しない）。
 """
 
+import pytest
+
 from sawagani import settings
 
 
@@ -40,6 +42,61 @@ class TestSchedulePath:
         monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
 
         assert settings.schedule_path().resolve() == (tmp_path / settings.SCHEDULE_FILE).resolve()
+
+
+class TestSecretsPath:
+    """secrets_path(): Discord Token 用ファイルの場所を返す。"""
+
+    def test_defaults_under_user_config_home(self, monkeypatch, tmp_path):
+        """XDG_CONFIG_HOME があればその配下の sawagani/secrets を使う。"""
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+        assert settings.secrets_path() == tmp_path / "sawagani" / "secrets"
+
+
+class TestLoadBotToken:
+    """load_bot_token(): env または secrets ファイルから Bot Token を読む。"""
+
+    def test_environment_takes_precedence(self, monkeypatch, tmp_path):
+        """環境変数があれば secrets ファイルを見ずにその値を使う。"""
+        monkeypatch.setenv(settings.DISCORD_BOT_TOKEN_ENV, "env-token")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+        assert settings.load_bot_token() == "env-token"
+
+    def test_reads_token_from_secrets_file(self, monkeypatch, tmp_path):
+        """環境変数が無い場合は 0600 の secrets ファイルから KEY=VALUE を読む。"""
+        monkeypatch.delenv(settings.DISCORD_BOT_TOKEN_ENV, raising=False)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        path = settings.secrets_path()
+        path.parent.mkdir(parents=True)
+        path.write_text("SAWAGANI_DISCORD_BOT_TOKEN=file-token\n", encoding="utf-8")
+        path.chmod(0o600)
+
+        assert settings.load_bot_token() == "file-token"
+
+    def test_rejects_group_or_world_readable_secrets_file(self, monkeypatch, tmp_path):
+        """0644 など他者が読める secrets ファイルは拒否する。"""
+        monkeypatch.delenv(settings.DISCORD_BOT_TOKEN_ENV, raising=False)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        path = settings.secrets_path()
+        path.parent.mkdir(parents=True)
+        path.write_text("SAWAGANI_DISCORD_BOT_TOKEN=file-token\n", encoding="utf-8")
+        path.chmod(0o644)
+
+        with pytest.raises(RuntimeError, match="chmod 600"):
+            settings.load_bot_token()
+
+    def test_raises_with_path_when_token_is_missing(self, monkeypatch, tmp_path):
+        """Token が見つからなければ設定先が分かるエラーを出す。"""
+        monkeypatch.delenv(settings.DISCORD_BOT_TOKEN_ENV, raising=False)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+        with pytest.raises(RuntimeError) as exc_info:
+            settings.load_bot_token()
+
+        assert str(settings.secrets_path()) in str(exc_info.value)
+        assert settings.DISCORD_BOT_TOKEN_ENV in str(exc_info.value)
 
 
 class TestWebDataDir:

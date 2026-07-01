@@ -13,7 +13,7 @@ Red/Green TDD で進める。まずは「やることなし(IDLE)」判定を行
 import anyio
 from claude_agent_sdk import AssistantMessage, TextBlock
 
-from sawagani import agent, settings
+from sawagani import agent, discord_bot, settings
 
 
 class FakeClient:
@@ -492,6 +492,122 @@ class TestTick:
         anyio.run(agent.tick, client)
 
         assert not (tmp_path / settings.MEMORY_FILE).exists()
+
+    def test_notifies_when_work_was_done(self, tmp_path, monkeypatch):
+        """非 IDLE の作業報告は notifier にも渡す。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        client = FakeClient("調査を完了しました。")
+        notified: list[str] = []
+
+        async def notifier(text: str):
+            notified.append(text)
+
+        anyio.run(agent.tick, client, notifier)
+
+        assert notified == ["調査を完了しました。"]
+
+    def test_does_not_notify_when_idle(self, tmp_path, monkeypatch):
+        """IDLE 応答は能動通知しない。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        client = FakeClient("IDLE")
+        notified: list[str] = []
+
+        async def notifier(text: str):
+            notified.append(text)
+
+        anyio.run(agent.tick, client, notifier)
+
+        assert notified == []
+
+
+class TestRunService:
+    """run_service(): ハートビートと Discord を同一常駐プロセスで動かす。"""
+
+    def test_cancellation_closes_shared_client(self, tmp_path, monkeypatch):
+        """外部キャンセル時に共有 ClaudeSDKClient の __aexit__ を呼ぶ。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        events: list[str] = []
+
+        class FakeSDKClient(FakeClient):
+            def __init__(self, options):
+                super().__init__("IDLE")
+
+            async def __aenter__(self):
+                events.append("enter")
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                events.append("exit")
+                return None
+
+        real_sleep = anyio.sleep
+
+        async def fake_sleep(seconds: float):
+            await real_sleep(999)
+
+        monkeypatch.setattr(agent, "ClaudeSDKClient", FakeSDKClient)
+        monkeypatch.setattr(agent.anyio, "sleep", fake_sleep)
+
+        async def run_briefly():
+            with anyio.move_on_after(0.01):
+                await agent.run_service(60)
+
+        anyio.run(run_briefly)
+
+        assert events == ["enter", "exit"]
+
+    def test_stop_event_cancels_discord_task(self, tmp_path, monkeypatch):
+        """SIGTERM 相当の stop_event で Discord タスクも止めてサービスを終了する。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        events: list[str] = []
+        loaded_settings = settings.Settings()
+        loaded_settings.min_interval_sec = 0
+        loaded_settings.discord.enabled = True
+
+        class FakeSDKClient(FakeClient):
+            def __init__(self, options):
+                super().__init__("IDLE")
+
+            async def __aenter__(self):
+                events.append("client-enter")
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                events.append("client-exit")
+                return None
+
+        class FakeBot:
+            def __init__(self):
+                self.closed = False
+
+            def is_closed(self):
+                return self.closed
+
+            async def close(self):
+                self.closed = True
+                events.append("bot-close")
+
+        async def fake_wait_for_wake_or_timeout(interval, wake, stop_event, check_interval=1.0):
+            stop_event.set()
+            return False
+
+        async def fake_start_bot(*args, **kwargs):
+            await anyio.sleep(999)
+
+        monkeypatch.setattr(agent.settings, "load_settings", lambda: loaded_settings)
+        monkeypatch.setattr(agent, "ClaudeSDKClient", FakeSDKClient)
+        monkeypatch.setattr(agent, "wait_for_wake_or_timeout", fake_wait_for_wake_or_timeout)
+        monkeypatch.setattr(discord_bot, "create_bot", lambda *args, **kwargs: FakeBot())
+        monkeypatch.setattr(discord_bot, "start_bot", fake_start_bot)
+
+        async def run_with_timeout():
+            with anyio.fail_after(0.05):
+                await agent.run_service(1)
+
+        anyio.run(run_with_timeout)
+
+        assert "client-exit" in events
+        assert "bot-close" in events
 
 
 class TestSleepUntilNextTick:
