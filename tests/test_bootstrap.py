@@ -4,6 +4,8 @@
 既存ファイルを上書きせず、安全に何度でも実行できることを重視する。
 """
 
+from pathlib import Path
+
 from sawagani import bootstrap, settings
 
 
@@ -39,3 +41,16 @@ class TestInitProject:
         assert config_path.read_text(encoding="utf-8") == '[agent]\nallowed_tools = ["Read"]\n'
         assert result.created == [tmp_path / settings.DEFAULT_WEB_DATA_DIR]
         assert result.skipped == [tasks_path, config_path]
+
+
+class TestConfigExample:
+    """config.example.toml: git 管理する安全な設定例を検証する。"""
+
+    def test_example_matches_init_template(self):
+        """init が作る config.toml と、リポジトリ上の example は同じ内容にする。"""
+        repo_root = Path(__file__).resolve().parents[1]
+
+        example = (repo_root / "config.example.toml").read_text(encoding="utf-8")
+
+        assert example == bootstrap.DEFAULT_CONFIG_TEMPLATE
+        assert "conversation = false" in example

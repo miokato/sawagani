@@ -14,7 +14,8 @@ DEFAULT_TASKS_TEMPLATE = """\
 
 DEFAULT_CONFIG_TEMPLATE = """\
 # Sawagani の設定ファイル（コードを触らず編集できる）。
-# 秘密情報は書かないこと（公開リポジトリにコミットされる）。
+# このファイルは sawagani init が生成するローカル設定です。
+# リポジトリでは config.example.toml だけを管理し、config.toml は各ユーザーが管理します。
 
 [agent]
 allowed_tools = ["Read", "Write", "WebSearch", "WebFetch"]
@@ -31,6 +32,9 @@ web_data_dir = "web-data"
 [discord]
 # Discord から Sawagani を操作する場合に true。Bot Token は環境変数に設定する。
 enabled = false
+# メンション/DM で Sawagani と会話する場合に true。
+# 有効にすると会話から config.toml / tasks.md を編集できるため、allowed_user_ids で利用者を絞る。
+conversation = false
 # guild_id = 123456789012345678
 # channel_id = 123456789012345678
 # allowed_user_ids = [123456789012345678]
