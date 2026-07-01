@@ -73,6 +73,10 @@ default_max_ticks = 48
 [storage]
 web_data_dir = "web-data"
 
+[downloads]
+allow_bash_downloads = false
+allowed_commands = ["curl", "wget"]
+
 [discord]
 enabled = false
 conversation = false
@@ -85,12 +89,14 @@ conversation = false
   論文やニュースを調べて本文や要点を `web_data_dir` 以下に保存できます。不要なら `allowed_tools` から外してください。
 - **保存先制限**: `Write` / `Edit` / `MultiEdit` によるファイル変更は `web_data_dir` 以下だけ許可されます。
   `MEMORY.md` への追記は LLM ではなく Sawagani 本体が行います。
+- **画像/PDFなどのダウンロード**: `[downloads] allow_bash_downloads = true` にすると、LLM が `curl` / `wget` を Bash で使えるようになります。
+  個人利用向けの緩い許可なので、取得物は自己責任で扱い、保存先は原則 `web_data_dir` 以下にしてください。
 
 ## セキュリティ
 
 - 許可ツールは `config.toml` の `allowed_tools` で利用者が管理します（`permission_mode="dontAsk"` で許可外は自動拒否）。
   `Bash` や `Edit` など強い権限のツールも設定上は追加できるため、信頼できる環境・用途に合わせて最小限にしてください。
-- ファイル変更は `web_data_dir` 以下に制限されます。`Bash` は保存先境界を保証できないため、設定に含めても実行時に拒否されます。
+- ファイル変更は `web_data_dir` 以下に制限されます。`Bash` は保存先境界を保証できないため原則拒否されますが、`[downloads] allow_bash_downloads = true` の場合だけ `curl` / `wget` を許可できます。
 - 取得したウェブ本文は「データ」として扱い、ページ内の指示には従わない方針（プロンプトインジェクション対策）。
 - 暴走防止: 1ティックのツール上限・総回数上限・間隔の下限・`STOP` キルスイッチ。
 - `config.toml` はローカル運用ファイルとして `.gitignore` しています。Bot Token などの秘密情報は引き続き書かず、環境変数で渡してください。

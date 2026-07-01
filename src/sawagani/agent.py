@@ -9,6 +9,7 @@ from itertools import count
 from pathlib import Path
 from collections.abc import Iterator
 from typing import Any
+import shlex
 
 import anyio
 from claude_agent_sdk import (
@@ -23,6 +24,7 @@ from . import settings
 
 WRITE_TOOL_NAMES = {"Write", "Edit", "MultiEdit"}
 WRITE_GUARD_MATCHER = "Write|Edit|MultiEdit|Bash"
+BASH_CONTROL_TOKENS = {";", "&&", "||", "|", ">", ">>", "<", "<<", "&"}
 
 
 def build_options() -> ClaudeAgentOptions:
@@ -33,10 +35,16 @@ def build_options() -> ClaudeAgentOptions:
     loaded_settings = settings.load_settings()
     web_data_dir = settings.web_data_dir(loaded_settings)
     web_data_dir.mkdir(parents=True, exist_ok=True)
+    allowed_tools = list(loaded_settings.allowed_tools)
+    allowed_bash_commands: list[str] = []
+    if loaded_settings.downloads.allow_bash_downloads:
+        allowed_bash_commands = loaded_settings.downloads.allowed_commands
+        if "Bash" not in allowed_tools:
+            allowed_tools.append("Bash")
 
     return ClaudeAgentOptions(
         cwd=str(settings.data_dir()),                # 状態ファイルのあるディレクトリを作業場所に
-        allowed_tools=loaded_settings.allowed_tools,  # 設定で許可されたツールのみ
+        allowed_tools=allowed_tools,  # 設定で許可されたツールのみ
         permission_mode="dontAsk",             # 許可外ツールは自動拒否
         system_prompt=settings.system_prompt(web_data_dir),
         max_turns=loaded_settings.max_turns_per_tick,  # 1ティックの上限
@@ -45,7 +53,12 @@ def build_options() -> ClaudeAgentOptions:
             "PreToolUse": [
                 HookMatcher(
                     matcher=WRITE_GUARD_MATCHER,
-                    hooks=[make_storage_write_guard(web_data_dir)],
+                    hooks=[
+                        make_storage_write_guard(
+                            web_data_dir,
+                            allowed_bash_commands=allowed_bash_commands,
+                        )
+                    ],
                 )
             ]
         },
@@ -100,7 +113,36 @@ def tool_file_path(tool_input: dict[str, Any]) -> str | None:
     return None
 
 
-def make_write_guard(allowed_dirs: list[Path], allowed_files: list[Path]):
+def tool_bash_command(tool_input: dict[str, Any]) -> str | None:
+    """Bash ツール入力からコマンド文字列を取り出す。"""
+    command = tool_input.get("command")
+    if isinstance(command, str) and command.strip():
+        return command
+    return None
+
+
+def is_allowed_bash_download(command: str, allowed_commands: list[str]) -> bool:
+    """Bash コマンドが許可された curl/wget ダウンロードかを判定する。"""
+    if not allowed_commands:
+        return False
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    if any(token in BASH_CONTROL_TOKENS for token in tokens):
+        return False
+
+    executable = Path(tokens[0]).name
+    return executable in set(allowed_commands)
+
+
+def make_write_guard(
+    allowed_dirs: list[Path],
+    allowed_files: list[Path],
+    allowed_bash_commands: list[str] | None = None,
+):
     """LLM の変更先を許可ファイルと許可ディレクトリ配下に制限する hook を返す。
 
     Bash は変更先を静的に保証できないため常に拒否する。Write/Edit/MultiEdit の
@@ -108,6 +150,7 @@ def make_write_guard(allowed_dirs: list[Path], allowed_files: list[Path]):
     """
     resolved_dirs = [directory.resolve() for directory in allowed_dirs]
     resolved_files = [file.resolve() for file in allowed_files]
+    allowed_bash_commands = allowed_bash_commands or []
 
     async def guard(
         hook_input: dict[str, Any],
@@ -116,9 +159,12 @@ def make_write_guard(allowed_dirs: list[Path], allowed_files: list[Path]):
     ) -> dict[str, Any]:
         tool_name = hook_input.get("tool_name")
         if tool_name == "Bash":
+            command = tool_bash_command(hook_input.get("tool_input", {}))
+            if command is not None and is_allowed_bash_download(command, allowed_bash_commands):
+                return hook_permission("allow")
             return hook_permission(
                 "deny",
-                "Bash は任意のファイル変更ができるため Sawagani では使用できません。",
+                "Bash は任意のファイル変更ができるため Sawagani では原則使用できません。",
             )
         if tool_name not in WRITE_TOOL_NAMES:
             return hook_permission("allow")
@@ -145,9 +191,13 @@ def make_write_guard(allowed_dirs: list[Path], allowed_files: list[Path]):
     return guard
 
 
-def make_storage_write_guard(web_data_dir: Path):
+def make_storage_write_guard(web_data_dir: Path, allowed_bash_commands: list[str] | None = None):
     """LLM の変更を web_data_dir 以下に制限する PreToolUse hook を返す。"""
-    return make_write_guard(allowed_dirs=[web_data_dir], allowed_files=[])
+    return make_write_guard(
+        allowed_dirs=[web_data_dir],
+        allowed_files=[],
+        allowed_bash_commands=allowed_bash_commands,
+    )
 
 
 def build_chat_options() -> ClaudeAgentOptions:
@@ -162,10 +212,15 @@ def build_chat_options() -> ClaudeAgentOptions:
         for tool in loaded_settings.allowed_tools
         if tool in {"WebSearch", "WebFetch"}
     ]
+    allowed_tools = ["Read", "Write", "Edit", *web_tools]
+    allowed_bash_commands: list[str] = []
+    if loaded_settings.downloads.allow_bash_downloads:
+        allowed_bash_commands = loaded_settings.downloads.allowed_commands
+        allowed_tools.append("Bash")
 
     return ClaudeAgentOptions(
         cwd=str(settings.data_dir()),
-        allowed_tools=["Read", "Write", "Edit", *web_tools],
+        allowed_tools=allowed_tools,
         permission_mode="dontAsk",
         system_prompt=settings.chat_system_prompt(web_data_dir, config_path, tasks_path),
         max_turns=loaded_settings.max_turns_per_tick,
@@ -178,6 +233,7 @@ def build_chat_options() -> ClaudeAgentOptions:
                         make_write_guard(
                             allowed_dirs=[web_data_dir],
                             allowed_files=[config_path, tasks_path],
+                            allowed_bash_commands=allowed_bash_commands,
                         )
                     ],
                 )

@@ -14,6 +14,12 @@ default_max_ticks = 48
 [storage]
 web_data_dir = "web-data"
 
+[downloads]
+# true にすると、LLM が Bash で curl/wget を使って画像や PDF などを取得できます。
+# 個人利用向けの緩い許可です。取得物は自己責任で扱ってください。
+allow_bash_downloads = false
+allowed_commands = ["curl", "wget"]
+
 [discord]
 # Discord から Sawagani を操作する場合に true。Bot Token は環境変数に設定する。
 enabled = false

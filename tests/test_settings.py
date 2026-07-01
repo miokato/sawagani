@@ -78,6 +78,8 @@ class TestLoadSettings:
         assert s.default_interval_sec == 1800
         assert s.min_interval_sec == 60
         assert s.default_max_ticks == 48
+        assert s.downloads.allow_bash_downloads is False
+        assert s.downloads.allowed_commands == ["curl", "wget"]
 
     def test_overrides_allowed_tools_from_file(self, tmp_path, monkeypatch):
         """config.toml の allowed_tools が反映される。未指定値はデフォルトのまま。"""
@@ -130,3 +132,18 @@ class TestLoadSettings:
         assert s.discord.guild_id == 111
         assert s.discord.channel_id == 222
         assert s.discord.allowed_user_ids == [333, 444]
+
+    def test_overrides_download_values_from_file(self, tmp_path, monkeypatch):
+        """config.toml の [downloads] 値が反映される。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        (tmp_path / settings.CONFIG_FILE).write_text(
+            "[downloads]\n"
+            "allow_bash_downloads = true\n"
+            'allowed_commands = ["curl"]\n',
+            encoding="utf-8",
+        )
+
+        s = settings.load_settings()
+
+        assert s.downloads.allow_bash_downloads is True
+        assert s.downloads.allowed_commands == ["curl"]

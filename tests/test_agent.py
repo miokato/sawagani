@@ -63,6 +63,21 @@ class TestBuildOptions:
         assert matchers[0].matcher == "Write|Edit|MultiEdit|Bash"
         assert options.add_dirs == [tmp_path / "web-data"]
 
+    def test_bash_is_added_when_bash_downloads_are_enabled(self, tmp_path, monkeypatch):
+        """downloads.allow_bash_downloads=true なら Bash ツールも許可リストに加える。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        (tmp_path / settings.CONFIG_FILE).write_text(
+            "[agent]\n"
+            'allowed_tools = ["Read", "Write"]\n'
+            "[downloads]\n"
+            "allow_bash_downloads = true\n",
+            encoding="utf-8",
+        )
+
+        options = agent.build_options()
+
+        assert "Bash" in options.allowed_tools
+
 
 class TestIsIdle:
     """is_idle(): 応答が IDLE（やることなし）かを判定する。"""
@@ -140,6 +155,66 @@ class TestStorageWriteGuard:
                 "hook_event_name": "PreToolUse",
                 "tool_name": "Bash",
                 "tool_input": {"command": "touch web-data/page.md"},
+            },
+            "tool-1",
+            {"signal": None},
+        )
+
+        assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    def test_allows_curl_when_bash_downloads_are_enabled(self, tmp_path):
+        """明示的に許可された場合、curl によるダウンロード用 Bash は許可する。"""
+        guard = agent.make_storage_write_guard(
+            tmp_path / "web-data",
+            allowed_bash_commands=["curl", "wget"],
+        )
+
+        result = anyio.run(
+            guard,
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "curl -L https://example.com/a.pdf -o web-data/a.pdf"},
+            },
+            "tool-1",
+            {"signal": None},
+        )
+
+        assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    def test_allows_wget_when_bash_downloads_are_enabled(self, tmp_path):
+        """明示的に許可された場合、wget によるダウンロード用 Bash は許可する。"""
+        guard = agent.make_storage_write_guard(
+            tmp_path / "web-data",
+            allowed_bash_commands=["curl", "wget"],
+        )
+
+        result = anyio.run(
+            guard,
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "wget https://example.com/a.png -O web-data/a.png"},
+            },
+            "tool-1",
+            {"signal": None},
+        )
+
+        assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    def test_denies_non_download_bash_even_when_downloads_are_enabled(self, tmp_path):
+        """curl/wget 以外の Bash は、ダウンロード許可時でも拒否する。"""
+        guard = agent.make_storage_write_guard(
+            tmp_path / "web-data",
+            allowed_bash_commands=["curl", "wget"],
+        )
+
+        result = anyio.run(
+            guard,
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "rm web-data/a.pdf"},
             },
             "tool-1",
             {"signal": None},
@@ -271,6 +346,18 @@ class TestBuildChatOptions:
         options = agent.build_chat_options()
 
         assert options.allowed_tools == ["Read", "Write", "Edit", "WebSearch"]
+
+    def test_chat_options_include_bash_when_bash_downloads_are_enabled(self, tmp_path, monkeypatch):
+        """会話モードでも downloads.allow_bash_downloads=true なら Bash を許可する。"""
+        monkeypatch.setenv(settings.HOME_ENV, str(tmp_path))
+        (tmp_path / settings.CONFIG_FILE).write_text(
+            "[downloads]\nallow_bash_downloads = true\n",
+            encoding="utf-8",
+        )
+
+        options = agent.build_chat_options()
+
+        assert "Bash" in options.allowed_tools
 
     def test_write_tools_are_guarded_by_hook(self, tmp_path, monkeypatch):
         """会話モードの Write/Edit/Bash は PreToolUse hook で保存先境界を検査する。"""
