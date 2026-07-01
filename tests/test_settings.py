@@ -116,6 +116,7 @@ class TestLoadSettings:
         (tmp_path / settings.CONFIG_FILE).write_text(
             "[discord]\n"
             "enabled = true\n"
+            "conversation = true\n"
             "guild_id = 111\n"
             "channel_id = 222\n"
             "allowed_user_ids = [333, 444]\n",
@@ -125,6 +126,7 @@ class TestLoadSettings:
         s = settings.load_settings()
 
         assert s.discord.enabled is True
+        assert s.discord.conversation is True
         assert s.discord.guild_id == 111
         assert s.discord.channel_id == 222
         assert s.discord.allowed_user_ids == [333, 444]

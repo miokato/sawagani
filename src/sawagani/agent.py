@@ -100,8 +100,14 @@ def tool_file_path(tool_input: dict[str, Any]) -> str | None:
     return None
 
 
-def make_storage_write_guard(web_data_dir: Path):
-    """LLM の変更を web_data_dir 以下に制限する PreToolUse hook を返す。"""
+def make_write_guard(allowed_dirs: list[Path], allowed_files: list[Path]):
+    """LLM の変更先を許可ファイルと許可ディレクトリ配下に制限する hook を返す。
+
+    Bash は変更先を静的に保証できないため常に拒否する。Write/Edit/MultiEdit の
+    相対パスは、状態ファイルと同じく ``settings.data_dir()`` 基準で解決する。
+    """
+    resolved_dirs = [directory.resolve() for directory in allowed_dirs]
+    resolved_files = [file.resolve() for file in allowed_files]
 
     async def guard(
         hook_input: dict[str, Any],
@@ -125,15 +131,73 @@ def make_storage_write_guard(web_data_dir: Path):
         if not target_path.is_absolute():
             target_path = settings.data_dir() / target_path
 
-        if path_is_under(target_path, web_data_dir):
+        resolved_target = target_path.resolve()
+        if any(resolved_target == allowed_file for allowed_file in resolved_files):
+            return hook_permission("allow")
+        if any(path_is_under(resolved_target, allowed_dir) for allowed_dir in resolved_dirs):
             return hook_permission("allow")
 
         return hook_permission(
             "deny",
-            f"ファイル変更は {web_data_dir} 以下に限定されています。",
+            "ファイル変更は許可された設定ファイル・タスクファイル・保存先ディレクトリに限定されています。",
         )
 
     return guard
+
+
+def make_storage_write_guard(web_data_dir: Path):
+    """LLM の変更を web_data_dir 以下に制限する PreToolUse hook を返す。"""
+    return make_write_guard(allowed_dirs=[web_data_dir], allowed_files=[])
+
+
+def build_chat_options() -> ClaudeAgentOptions:
+    """Discord 会話モード用の Claude Agent SDK オプションを組み立てる。"""
+    loaded_settings = settings.load_settings()
+    web_data_dir = settings.web_data_dir(loaded_settings)
+    web_data_dir.mkdir(parents=True, exist_ok=True)
+    config_path = settings.data_dir() / settings.CONFIG_FILE
+    tasks_path = settings.data_dir() / settings.TASKS_FILE
+    web_tools = [
+        tool
+        for tool in loaded_settings.allowed_tools
+        if tool in {"WebSearch", "WebFetch"}
+    ]
+
+    return ClaudeAgentOptions(
+        cwd=str(settings.data_dir()),
+        allowed_tools=["Read", "Write", "Edit", *web_tools],
+        permission_mode="dontAsk",
+        system_prompt=settings.chat_system_prompt(web_data_dir, config_path, tasks_path),
+        max_turns=loaded_settings.max_turns_per_tick,
+        add_dirs=[web_data_dir],
+        hooks={
+            "PreToolUse": [
+                HookMatcher(
+                    matcher=WRITE_GUARD_MATCHER,
+                    hooks=[
+                        make_write_guard(
+                            allowed_dirs=[web_data_dir],
+                            allowed_files=[config_path, tasks_path],
+                        )
+                    ],
+                )
+            ]
+        },
+    )
+
+
+async def run_chat_turn(client: ClaudeSDKClient, user_text: str) -> str:
+    """会話モードの1ターンを実行し、Assistant のテキスト応答を返す。"""
+    await client.query(user_text)
+
+    parts: list[str] = []
+    async for msg in client.receive_response():
+        if isinstance(msg, AssistantMessage):
+            for block in msg.content:
+                if isinstance(block, TextBlock):
+                    parts.append(block.text)
+
+    return "".join(parts).strip()
 
 
 def memory_summary(text: str) -> str:

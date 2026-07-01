@@ -73,6 +73,7 @@ web_data_dir = "web-data"
 
 [discord]
 enabled = false
+conversation = false
 # guild_id = 123456789012345678
 # channel_id = 123456789012345678
 # allowed_user_ids = [123456789012345678]
@@ -152,6 +153,14 @@ sawagani discord start
 ```
 
 `/sawagani task` は直接実行せず、まず `tasks.md` に追記します。次の tick で通常の権限境界の中で処理されます。
+
+### 会話モード
+
+`[discord] conversation = true` にすると、slash command に加えて `@Sawagani ...` のメンションや Bot への DM で会話できます。メンション/DM 宛ての本文は Discord の仕様上 Message Content Intent なしで届くため、Privileged Gateway Intents は OFF のままで構いません。
+
+会話モードでは Sawagani が `tasks.md` / `MEMORY.md` / `config.toml` を読んで状況を説明し、`tasks.md` へのタスク追加や `config.toml` の編集も行えます。`config.toml` の変更は、実行中のデーモンや現在の会話セッションには即時反映されず、次回 `sawagani start` 起動時に反映されます。
+
+強い機能なので、必要に応じて `allowed_user_ids` で会話できるユーザーを制限してください。会話の文脈を消したいときは、メンションまたは DM で `リセット` と送ると、そのチャンネルの会話セッションを作り直します。
 
 ### うまくいかないとき
 
